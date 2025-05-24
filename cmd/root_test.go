@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -105,9 +106,19 @@ func (suite *CLITestSuite) TestAddCommand() {
 	suite.NoError(err)
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
 
-	// Verify file exists in repo
-	repoFile := filepath.Join(suite.tempDir, "lnk", ".bashrc")
-	suite.FileExists(repoFile)
+	// Verify some file exists in repo with .bashrc in the name
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	entries, err := os.ReadDir(lnkDir)
+	suite.NoError(err)
+
+	found := false
+	for _, entry := range entries {
+		if strings.Contains(entry.Name(), ".bashrc") && entry.Name() != ".lnk" {
+			found = true
+			break
+		}
+	}
+	suite.True(found, "Repository should contain a file with .bashrc in the name")
 }
 
 func (suite *CLITestSuite) TestRemoveCommand() {
@@ -325,9 +336,92 @@ func (suite *CLITestSuite) TestAddDirectory() {
 	suite.NoError(err)
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
 
-	// Verify directory exists in repo
-	repoDir := filepath.Join(suite.tempDir, "lnk", ".config")
-	suite.DirExists(repoDir)
+	// Verify some directory exists in repo with .config in the name
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	entries, err := os.ReadDir(lnkDir)
+	suite.NoError(err)
+
+	found := false
+	for _, entry := range entries {
+		if strings.Contains(entry.Name(), ".config") && entry.Name() != ".lnk" {
+			found = true
+			break
+		}
+	}
+	suite.True(found, "Repository should contain a directory with .config in the name")
+}
+
+func (suite *CLITestSuite) TestSameBasenameFilesBug() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create two directories with files having the same basename
+	dirA := filepath.Join(suite.tempDir, "a")
+	dirB := filepath.Join(suite.tempDir, "b")
+	err = os.MkdirAll(dirA, 0755)
+	suite.Require().NoError(err)
+	err = os.MkdirAll(dirB, 0755)
+	suite.Require().NoError(err)
+
+	// Create files with same basename but different content
+	fileA := filepath.Join(dirA, "config.json")
+	fileB := filepath.Join(dirB, "config.json")
+	contentA := `{"name": "config_a"}`
+	contentB := `{"name": "config_b"}`
+
+	err = os.WriteFile(fileA, []byte(contentA), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(fileB, []byte(contentB), 0644)
+	suite.Require().NoError(err)
+
+	// Add first file
+	err = suite.runCommand("add", fileA)
+	suite.NoError(err)
+	suite.stdout.Reset()
+
+	// Verify first file content is preserved
+	content, err := os.ReadFile(fileA)
+	suite.NoError(err)
+	suite.Equal(contentA, string(content), "First file should preserve its original content")
+
+	// Add second file with same basename - this should work correctly
+	err = suite.runCommand("add", fileB)
+	suite.NoError(err, "Adding second file with same basename should work")
+
+	// CORRECT BEHAVIOR: Both files should preserve their original content
+	contentAfterAddA, err := os.ReadFile(fileA)
+	suite.NoError(err)
+	contentAfterAddB, err := os.ReadFile(fileB)
+	suite.NoError(err)
+
+	suite.Equal(contentA, string(contentAfterAddA), "First file should keep its original content")
+	suite.Equal(contentB, string(contentAfterAddB), "Second file should keep its original content")
+
+	// Both files should be removable independently
+	suite.stdout.Reset()
+	err = suite.runCommand("rm", fileA)
+	suite.NoError(err, "First file should be removable")
+
+	// Verify output shows removal
+	output := suite.stdout.String()
+	suite.Contains(output, "Removed config.json from lnk")
+
+	// Verify first file is restored with correct content
+	restoredContentA, err := os.ReadFile(fileA)
+	suite.NoError(err)
+	suite.Equal(contentA, string(restoredContentA), "Restored first file should have original content")
+
+	// Second file should still be removable without errors
+	suite.stdout.Reset()
+	err = suite.runCommand("rm", fileB)
+	suite.NoError(err, "Second file should also be removable without errors")
+
+	// Verify second file is restored with correct content
+	restoredContentB, err := os.ReadFile(fileB)
+	suite.NoError(err)
+	suite.Equal(contentB, string(restoredContentB), "Restored second file should have original content")
 }
 
 func TestCLISuite(t *testing.T) {

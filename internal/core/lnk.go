@@ -43,6 +43,41 @@ func getRepoPath() string {
 	return filepath.Join(xdgConfig, "lnk")
 }
 
+// generateRepoName creates a unique repository filename from a relative path
+func generateRepoName(relativePath string) string {
+	// Replace slashes and backslashes with underscores to create valid filename
+	repoName := strings.ReplaceAll(relativePath, "/", "_")
+	repoName = strings.ReplaceAll(repoName, "\\", "_")
+	return repoName
+}
+
+// getRelativePath converts an absolute path to a relative path from home directory
+func getRelativePath(absPath string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	// Check if the file is under home directory
+	relPath, err := filepath.Rel(homeDir, absPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get relative path: %w", err)
+	}
+
+	// If the relative path starts with "..", the file is outside home directory
+	// In this case, use the absolute path as relative (without the leading slash)
+	if strings.HasPrefix(relPath, "..") {
+		// Use absolute path but remove leading slash and drive letter (for cross-platform)
+		cleanPath := strings.TrimPrefix(absPath, "/")
+		if len(cleanPath) > 1 && cleanPath[1] == ':' {
+			// Windows drive letter, keep as is
+		}
+		return cleanPath, nil
+	}
+
+	return relPath, nil
+}
+
 // Init initializes the lnk repository
 func (l *Lnk) Init() error {
 	return l.InitWithRemote("")
@@ -109,9 +144,26 @@ func (l *Lnk) Add(filePath string) error {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// Calculate destination path in repo
-	basename := filepath.Base(absPath)
-	destPath := filepath.Join(l.repoPath, basename)
+	// Get relative path for tracking
+	relativePath, err := getRelativePath(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to get relative path: %w", err)
+	}
+
+	// Generate unique repository name from relative path
+	repoName := generateRepoName(relativePath)
+	destPath := filepath.Join(l.repoPath, repoName)
+
+	// Check if this relative path is already managed
+	managedItems, err := l.getManagedItems()
+	if err != nil {
+		return fmt.Errorf("failed to get managed items: %w", err)
+	}
+	for _, item := range managedItems {
+		if item == relativePath {
+			return fmt.Errorf("❌ File is already managed by lnk: \033[31m%s\033[0m", relativePath)
+		}
+	}
 
 	// Check if it's a directory or file
 	info, err := os.Stat(absPath)
@@ -141,8 +193,8 @@ func (l *Lnk) Add(filePath string) error {
 		return fmt.Errorf("failed to create symlink: %w", err)
 	}
 
-	// Add to .lnk tracking file
-	if err := l.addManagedItem(absPath); err != nil {
+	// Add to .lnk tracking file using relative path
+	if err := l.addManagedItem(relativePath); err != nil {
 		// Try to restore the original state if tracking fails
 		_ = os.Remove(absPath) // Ignore error in cleanup
 		if info.IsDir() {
@@ -154,10 +206,10 @@ func (l *Lnk) Add(filePath string) error {
 	}
 
 	// Add both the item and .lnk file to git in a single commit
-	if err := l.git.Add(basename); err != nil {
+	if err := l.git.Add(repoName); err != nil {
 		// Try to restore the original state if git add fails
-		_ = os.Remove(absPath)           // Ignore error in cleanup
-		_ = l.removeManagedItem(absPath) // Ignore error in cleanup
+		_ = os.Remove(absPath)                // Ignore error in cleanup
+		_ = l.removeManagedItem(relativePath) // Ignore error in cleanup
 		if info.IsDir() {
 			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
 		} else {
@@ -169,8 +221,8 @@ func (l *Lnk) Add(filePath string) error {
 	// Add .lnk file to the same commit
 	if err := l.git.Add(".lnk"); err != nil {
 		// Try to restore the original state if git add fails
-		_ = os.Remove(absPath)           // Ignore error in cleanup
-		_ = l.removeManagedItem(absPath) // Ignore error in cleanup
+		_ = os.Remove(absPath)                // Ignore error in cleanup
+		_ = l.removeManagedItem(relativePath) // Ignore error in cleanup
 		if info.IsDir() {
 			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
 		} else {
@@ -180,10 +232,11 @@ func (l *Lnk) Add(filePath string) error {
 	}
 
 	// Commit both changes together
+	basename := filepath.Base(relativePath)
 	if err := l.git.Commit(fmt.Sprintf("lnk: added %s", basename)); err != nil {
 		// Try to restore the original state if commit fails
-		_ = os.Remove(absPath)           // Ignore error in cleanup
-		_ = l.removeManagedItem(absPath) // Ignore error in cleanup
+		_ = os.Remove(absPath)                // Ignore error in cleanup
+		_ = l.removeManagedItem(relativePath) // Ignore error in cleanup
 		if info.IsDir() {
 			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
 		} else {
@@ -208,6 +261,29 @@ func (l *Lnk) Remove(filePath string) error {
 		return err
 	}
 
+	// Get relative path for tracking
+	relativePath, err := getRelativePath(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to get relative path: %w", err)
+	}
+
+	// Check if this relative path is managed
+	managedItems, err := l.getManagedItems()
+	if err != nil {
+		return fmt.Errorf("failed to get managed items: %w", err)
+	}
+
+	found := false
+	for _, item := range managedItems {
+		if item == relativePath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("❌ File is not managed by lnk: \033[31m%s\033[0m", relativePath)
+	}
+
 	// Get the target path in the repository
 	target, err := os.Readlink(absPath)
 	if err != nil {
@@ -219,7 +295,7 @@ func (l *Lnk) Remove(filePath string) error {
 		target = filepath.Join(filepath.Dir(absPath), target)
 	}
 
-	basename := filepath.Base(target)
+	repoName := filepath.Base(target)
 
 	// Check if target is a directory or file
 	info, err := os.Stat(target)
@@ -232,13 +308,13 @@ func (l *Lnk) Remove(filePath string) error {
 		return fmt.Errorf("failed to remove symlink: %w", err)
 	}
 
-	// Remove from .lnk tracking file
-	if err := l.removeManagedItem(absPath); err != nil {
+	// Remove from .lnk tracking file using relative path
+	if err := l.removeManagedItem(relativePath); err != nil {
 		return fmt.Errorf("failed to update tracking file: %w", err)
 	}
 
 	// Remove from Git first (while the item is still in the repository)
-	if err := l.git.Remove(basename); err != nil {
+	if err := l.git.Remove(repoName); err != nil {
 		return fmt.Errorf("failed to remove from git: %w", err)
 	}
 
@@ -248,6 +324,7 @@ func (l *Lnk) Remove(filePath string) error {
 	}
 
 	// Commit both changes together
+	basename := filepath.Base(relativePath)
 	if err := l.git.Commit(fmt.Sprintf("lnk: removed %s", basename)); err != nil {
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
@@ -356,32 +433,39 @@ func (l *Lnk) Pull() ([]string, error) {
 func (l *Lnk) RestoreSymlinks() ([]string, error) {
 	var restored []string
 
-	// Get managed items from .lnk file
+	// Get managed items from .lnk file (now containing relative paths)
 	managedItems, err := l.getManagedItems()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get managed items: %w", err)
 	}
 
-	for _, itemName := range managedItems {
-		repoItem := filepath.Join(l.repoPath, itemName)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	for _, relativePath := range managedItems {
+		// Generate repository name from relative path
+		repoName := generateRepoName(relativePath)
+		repoItem := filepath.Join(l.repoPath, repoName)
 
 		// Check if item exists in repository
 		if _, err := os.Stat(repoItem); os.IsNotExist(err) {
 			continue // Skip missing items
 		}
 
-		// Determine where the symlink should be
-		// For config files, we'll place them in the user's home directory
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get home directory: %w", err)
-		}
-
-		symlinkPath := filepath.Join(homeDir, itemName)
+		// Determine where the symlink should be created
+		symlinkPath := filepath.Join(homeDir, relativePath)
 
 		// Check if symlink already exists and is correct
 		if l.isValidSymlink(symlinkPath, repoItem) {
 			continue
+		}
+
+		// Ensure parent directory exists
+		symlinkDir := filepath.Dir(symlinkPath)
+		if err := os.MkdirAll(symlinkDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %w", symlinkDir, err)
 		}
 
 		// Remove existing file/symlink if it exists
@@ -393,10 +477,10 @@ func (l *Lnk) RestoreSymlinks() ([]string, error) {
 
 		// Create symlink
 		if err := l.fs.CreateSymlink(repoItem, symlinkPath); err != nil {
-			return nil, fmt.Errorf("failed to create symlink for %s: %w", itemName, err)
+			return nil, fmt.Errorf("failed to create symlink for %s: %w", relativePath, err)
 		}
 
-		restored = append(restored, itemName)
+		restored = append(restored, relativePath)
 	}
 
 	return restored, nil
@@ -470,25 +554,22 @@ func (l *Lnk) getManagedItems() ([]string, error) {
 }
 
 // addManagedItem adds an item to the .lnk tracking file
-func (l *Lnk) addManagedItem(itemPath string) error {
+func (l *Lnk) addManagedItem(relativePath string) error {
 	// Get current items
 	items, err := l.getManagedItems()
 	if err != nil {
 		return fmt.Errorf("failed to get managed items: %w", err)
 	}
 
-	// Get the basename for storage
-	basename := filepath.Base(itemPath)
-
 	// Check if already exists
 	for _, item := range items {
-		if item == basename {
+		if item == relativePath {
 			return nil // Already managed
 		}
 	}
 
-	// Add new item
-	items = append(items, basename)
+	// Add new item using relative path
+	items = append(items, relativePath)
 
 	// Sort for consistent ordering
 	sort.Strings(items)
@@ -497,20 +578,17 @@ func (l *Lnk) addManagedItem(itemPath string) error {
 }
 
 // removeManagedItem removes an item from the .lnk tracking file
-func (l *Lnk) removeManagedItem(itemPath string) error {
+func (l *Lnk) removeManagedItem(relativePath string) error {
 	// Get current items
 	items, err := l.getManagedItems()
 	if err != nil {
 		return fmt.Errorf("failed to get managed items: %w", err)
 	}
 
-	// Get the basename for removal
-	basename := filepath.Base(itemPath)
-
-	// Remove item
+	// Remove item using relative path
 	var newItems []string
 	for _, item := range items {
-		if item != basename {
+		if item != relativePath {
 			newItems = append(newItems, item)
 		}
 	}

@@ -82,7 +82,19 @@ func (suite *CoreTestSuite) TestCoreFileOperations() {
 	suite.Require().NoError(err)
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
 
-	repoFile := filepath.Join(suite.tempDir, "lnk", ".bashrc")
+	// The repository file will have a generated name based on the relative path
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	entries, err := os.ReadDir(lnkDir)
+	suite.Require().NoError(err)
+
+	var repoFile string
+	for _, entry := range entries {
+		if strings.Contains(entry.Name(), ".bashrc") && entry.Name() != ".lnk" {
+			repoFile = filepath.Join(lnkDir, entry.Name())
+			break
+		}
+	}
+	suite.NotEmpty(repoFile, "Repository should contain a file with .bashrc in the name")
 	suite.FileExists(repoFile)
 
 	// Verify content is preserved
@@ -129,8 +141,19 @@ func (suite *CoreTestSuite) TestCoreDirectoryOperations() {
 	suite.Require().NoError(err)
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
 
-	// Verify directory exists in repo
-	repoDir := filepath.Join(suite.tempDir, "lnk", "testdir")
+	// Check that some repository directory exists with testdir in the name
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	entries, err := os.ReadDir(lnkDir)
+	suite.Require().NoError(err)
+
+	var repoDir string
+	for _, entry := range entries {
+		if strings.Contains(entry.Name(), "testdir") && entry.Name() != ".lnk" {
+			repoDir = filepath.Join(lnkDir, entry.Name())
+			break
+		}
+	}
+	suite.NotEmpty(repoDir, "Repository should contain a directory with testdir in the name")
 	suite.DirExists(repoDir)
 
 	// Remove the directory
@@ -179,8 +202,12 @@ func (suite *CoreTestSuite) TestLnkFileTracking() {
 
 	lines := strings.Split(strings.TrimSpace(string(lnkContent)), "\n")
 	suite.Len(lines, 2)
-	suite.Contains(lines, ".bashrc")
-	suite.Contains(lines, ".ssh")
+
+	// The .lnk file now contains relative paths, not basenames
+	// Check that the content contains references to .bashrc and .ssh
+	content := string(lnkContent)
+	suite.Contains(content, ".bashrc", ".lnk file should contain reference to .bashrc")
+	suite.Contains(content, ".ssh", ".lnk file should contain reference to .ssh")
 
 	// Remove one item and verify tracking is updated
 	err = suite.lnk.Remove(testFile)
@@ -191,8 +218,10 @@ func (suite *CoreTestSuite) TestLnkFileTracking() {
 
 	lines = strings.Split(strings.TrimSpace(string(lnkContent)), "\n")
 	suite.Len(lines, 1)
-	suite.Contains(lines, ".ssh")
-	suite.NotContains(lines, ".bashrc")
+
+	content = string(lnkContent)
+	suite.Contains(content, ".ssh", ".lnk file should still contain reference to .ssh")
+	suite.NotContains(content, ".bashrc", ".lnk file should not contain reference to .bashrc after removal")
 }
 
 // Test XDG_CONFIG_HOME fallback
@@ -308,6 +337,147 @@ func (suite *CoreTestSuite) TestGitOperations() {
 	suite.Require().NoError(err)
 	suite.Equal(1, status.Ahead)
 	suite.Equal(0, status.Behind)
+}
+
+// Test edge case: files with same basename from different directories should be handled properly
+func (suite *CoreTestSuite) TestSameBasenameFilesOverwrite() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create two directories with files having the same basename
+	dirA := filepath.Join(suite.tempDir, "a")
+	dirB := filepath.Join(suite.tempDir, "b")
+	err = os.MkdirAll(dirA, 0755)
+	suite.Require().NoError(err)
+	err = os.MkdirAll(dirB, 0755)
+	suite.Require().NoError(err)
+
+	// Create files with same basename but different content
+	fileA := filepath.Join(dirA, "config.json")
+	fileB := filepath.Join(dirB, "config.json")
+	contentA := `{"name": "config_a"}`
+	contentB := `{"name": "config_b"}`
+
+	err = os.WriteFile(fileA, []byte(contentA), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(fileB, []byte(contentB), 0644)
+	suite.Require().NoError(err)
+
+	// Add first file
+	err = suite.lnk.Add(fileA)
+	suite.Require().NoError(err)
+
+	// Verify first file is managed correctly and preserves content
+	info, err := os.Lstat(fileA)
+	suite.Require().NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+
+	symlinkContentA, err := os.ReadFile(fileA)
+	suite.Require().NoError(err)
+	suite.Equal(contentA, string(symlinkContentA), "First file should preserve its original content")
+
+	// Add second file - this should work without overwriting the first
+	err = suite.lnk.Add(fileB)
+	suite.Require().NoError(err)
+
+	// Verify second file is managed
+	info, err = os.Lstat(fileB)
+	suite.Require().NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+
+	// CORRECT BEHAVIOR: Both files should preserve their original content
+	symlinkContentA, err = os.ReadFile(fileA)
+	suite.Require().NoError(err)
+	symlinkContentB, err := os.ReadFile(fileB)
+	suite.Require().NoError(err)
+
+	suite.Equal(contentA, string(symlinkContentA), "First file should keep its original content")
+	suite.Equal(contentB, string(symlinkContentB), "Second file should keep its original content")
+
+	// Both files should be removable independently
+	err = suite.lnk.Remove(fileA)
+	suite.Require().NoError(err, "First file should be removable")
+
+	// First file should be restored with correct content
+	info, err = os.Lstat(fileA)
+	suite.Require().NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink) // Not a symlink anymore
+
+	restoredContentA, err := os.ReadFile(fileA)
+	suite.Require().NoError(err)
+	suite.Equal(contentA, string(restoredContentA), "Restored file should have original content")
+
+	// Second file should still be manageable and removable
+	err = suite.lnk.Remove(fileB)
+	suite.Require().NoError(err, "Second file should also be removable without errors")
+
+	// Second file should be restored with correct content
+	info, err = os.Lstat(fileB)
+	suite.Require().NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink) // Not a symlink anymore
+
+	restoredContentB, err := os.ReadFile(fileB)
+	suite.Require().NoError(err)
+	suite.Equal(contentB, string(restoredContentB), "Second restored file should have original content")
+}
+
+// Test another variant: adding files with same basename should work correctly
+func (suite *CoreTestSuite) TestSameBasenameSequentialAdd() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create subdirectories in different locations
+	configDir := filepath.Join(suite.tempDir, "config")
+	backupDir := filepath.Join(suite.tempDir, "backup")
+	err = os.MkdirAll(configDir, 0755)
+	suite.Require().NoError(err)
+	err = os.MkdirAll(backupDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create files with same basename (.bashrc)
+	configBashrc := filepath.Join(configDir, ".bashrc")
+	backupBashrc := filepath.Join(backupDir, ".bashrc")
+
+	originalContent := "export PATH=/usr/local/bin:$PATH"
+	backupContent := "export PATH=/opt/bin:$PATH"
+
+	err = os.WriteFile(configBashrc, []byte(originalContent), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(backupBashrc, []byte(backupContent), 0644)
+	suite.Require().NoError(err)
+
+	// Add first .bashrc
+	err = suite.lnk.Add(configBashrc)
+	suite.Require().NoError(err)
+
+	// Add second .bashrc - should work without overwriting the first
+	err = suite.lnk.Add(backupBashrc)
+	suite.Require().NoError(err)
+
+	// Check .lnk tracking file should track both properly
+	lnkFile := filepath.Join(suite.tempDir, "lnk", ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.Require().NoError(err)
+
+	// Both entries should be tracked and distinguishable
+	content := string(lnkContent)
+	suite.Contains(content, ".bashrc", "Both .bashrc files should be tracked")
+
+	// Both files should maintain their distinct content
+	content1, err := os.ReadFile(configBashrc)
+	suite.Require().NoError(err)
+	content2, err := os.ReadFile(backupBashrc)
+	suite.Require().NoError(err)
+
+	suite.Equal(originalContent, string(content1), "First file should keep original content")
+	suite.Equal(backupContent, string(content2), "Second file should keep its distinct content")
+
+	// Both should be removable independently
+	err = suite.lnk.Remove(configBashrc)
+	suite.Require().NoError(err, "First .bashrc should be removable")
+
+	err = suite.lnk.Remove(backupBashrc)
+	suite.Require().NoError(err, "Second .bashrc should be removable")
 }
 
 func TestCoreSuite(t *testing.T) {
