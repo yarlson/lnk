@@ -162,7 +162,7 @@ func (suite *LnkIntegrationTestSuite) TestAddNonexistentFile() {
 
 	err = suite.lnk.Add("/nonexistent/file")
 	suite.Error(err)
-	suite.Contains(err.Error(), "file does not exist")
+	suite.Contains(err.Error(), "File does not exist")
 }
 
 func (suite *LnkIntegrationTestSuite) TestAddDirectory() {
@@ -406,7 +406,7 @@ func (suite *LnkIntegrationTestSuite) TestRemoveNonSymlink() {
 
 	err = suite.lnk.Remove(testFile)
 	suite.Error(err)
-	suite.Contains(err.Error(), "file is not managed by lnk")
+	suite.Contains(err.Error(), "File is not managed by lnk")
 }
 
 func (suite *LnkIntegrationTestSuite) TestXDGConfigHomeFallback() {
@@ -550,7 +550,7 @@ func (suite *LnkIntegrationTestSuite) TestInitWithNonLnkRepo() {
 	// Now try to init lnk - should error to protect existing repo
 	err = suite.lnk.Init()
 	suite.Error(err)
-	suite.Contains(err.Error(), "appears to contain an existing Git repository")
+	suite.Contains(err.Error(), "contains an existing Git repository")
 
 	// Verify the original file is still there
 	suite.FileExists(testFile)

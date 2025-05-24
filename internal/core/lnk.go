@@ -68,7 +68,7 @@ func (l *Lnk) InitWithRemote(remoteURL string) error {
 			return nil
 		} else {
 			// It's not a lnk repository, error to prevent data loss
-			return fmt.Errorf("directory %s appears to contain an existing Git repository that is not managed by lnk. Please backup or move the existing repository before initializing lnk", l.repoPath)
+			return fmt.Errorf("❌ Directory \033[31m%s\033[0m contains an existing Git repository\n   💡 Please backup or move the existing repository before initializing lnk", l.repoPath)
 		}
 	}
 
@@ -282,7 +282,7 @@ type StatusInfo struct {
 func (l *Lnk) Status() (*StatusInfo, error) {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return nil, fmt.Errorf("lnk repository not initialized - run 'lnk init' first")
+		return nil, fmt.Errorf("❌ Lnk repository not initialized\n   💡 Run \033[1mlnk init\033[0m first")
 	}
 
 	gitStatus, err := l.git.GetStatus()
@@ -301,7 +301,7 @@ func (l *Lnk) Status() (*StatusInfo, error) {
 func (l *Lnk) Push(message string) error {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return fmt.Errorf("lnk repository not initialized - run 'lnk init' first")
+		return fmt.Errorf("❌ Lnk repository not initialized\n   💡 Run \033[1mlnk init\033[0m first")
 	}
 
 	// Check if there are any changes
@@ -335,7 +335,7 @@ func (l *Lnk) Push(message string) error {
 func (l *Lnk) Pull() ([]string, error) {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return nil, fmt.Errorf("lnk repository not initialized - run 'lnk init' first")
+		return nil, fmt.Errorf("❌ Lnk repository not initialized\n   💡 Run \033[1mlnk init\033[0m first")
 	}
 
 	// Pull changes from remote (this will be a no-op in tests since we don't have real remotes)

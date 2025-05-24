@@ -21,14 +21,14 @@ func (fs *FileSystem) ValidateFileForAdd(filePath string) error {
 	info, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("file does not exist: %s", filePath)
+			return fmt.Errorf("❌ File does not exist: \033[31m%s\033[0m", filePath)
 		}
-		return fmt.Errorf("failed to stat file: %w", err)
+		return fmt.Errorf("❌ Failed to check file: %w", err)
 	}
 
 	// Allow both regular files and directories
 	if !info.Mode().IsRegular() && !info.IsDir() {
-		return fmt.Errorf("only regular files and directories are supported: %s", filePath)
+		return fmt.Errorf("❌ Only regular files and directories are supported: \033[31m%s\033[0m", filePath)
 	}
 
 	return nil
@@ -40,14 +40,14 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 	info, err := os.Lstat(filePath) // Use Lstat to not follow symlinks
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("file does not exist: %s", filePath)
+			return fmt.Errorf("❌ File does not exist: \033[31m%s\033[0m", filePath)
 		}
-		return fmt.Errorf("failed to stat file: %w", err)
+		return fmt.Errorf("❌ Failed to check file: %w", err)
 	}
 
 	// Check if it's a symlink
 	if info.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("file is not managed by lnk: %s", filePath)
+		return fmt.Errorf("❌ File is not managed by lnk: \033[31m%s\033[0m\n   💡 Use \033[1mlnk add\033[0m to manage this file first", filePath)
 	}
 
 	// Check if symlink points to the repository
@@ -67,7 +67,7 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 
 	// Check if target is inside the repository
 	if !strings.HasPrefix(target, repoPath+string(filepath.Separator)) && target != repoPath {
-		return fmt.Errorf("file is not managed by lnk: %s", filePath)
+		return fmt.Errorf("❌ File is not managed by lnk: \033[31m%s\033[0m", filePath)
 	}
 
 	return nil
