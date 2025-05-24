@@ -16,7 +16,7 @@ YELLOW=\033[0;33m
 BLUE=\033[0;34m
 NC=\033[0m # No Color
 
-.PHONY: help build test clean install uninstall fmt lint vet tidy run dev cross-compile release
+.PHONY: help build test clean install uninstall fmt lint vet tidy run dev cross-compile release goreleaser-check goreleaser-snapshot
 
 ## help: Show this help message
 help:
@@ -42,8 +42,10 @@ help:
 	@echo "  uninstall   Remove binary from /usr/local/bin"
 	@echo ""
 	@echo "$(GREEN)Release:$(NC)"
-	@echo "  cross-compile  Build for multiple platforms"
-	@echo "  release     Create release builds"
+	@echo "  cross-compile       Build for multiple platforms (legacy)"
+	@echo "  release             Create release builds (legacy)"
+	@echo "  goreleaser-check    Validate .goreleaser.yml config"
+	@echo "  goreleaser-snapshot Build snapshot release with GoReleaser"
 	@echo ""
 	@echo "$(GREEN)Utilities:$(NC)"
 	@echo "  clean       Clean build artifacts"
@@ -158,7 +160,27 @@ clean:
 deps:
 	@echo "$(BLUE)Installing development dependencies...$(NC)"
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@if ! command -v goreleaser >/dev/null 2>&1; then \
+		echo "$(BLUE)Installing GoReleaser...$(NC)"; \
+		go install github.com/goreleaser/goreleaser@latest; \
+	fi
 	@echo "$(GREEN)✓ Dependencies installed$(NC)"
+
+## goreleaser-check: Validate GoReleaser configuration
+goreleaser-check:
+	@echo "$(BLUE)Validating GoReleaser configuration...$(NC)"
+	@if command -v goreleaser >/dev/null 2>&1; then \
+		goreleaser check; \
+		echo "$(GREEN)✓ GoReleaser configuration is valid$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠ GoReleaser not found. Install with: make deps$(NC)"; \
+	fi
+
+## goreleaser-snapshot: Build snapshot release with GoReleaser
+goreleaser-snapshot: goreleaser-check
+	@echo "$(BLUE)Building snapshot release with GoReleaser...$(NC)"
+	@goreleaser build --snapshot --clean
+	@echo "$(GREEN)✓ Snapshot release built in dist/$(NC)"
 
 # Default target
 all: check build 

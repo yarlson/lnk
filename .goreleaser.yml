@@ -1,0 +1,129 @@
+# GoReleaser configuration for lnk
+version: 2
+
+project_name: lnk
+
+before:
+  hooks:
+    # You may remove this if you don't use go modules.
+    - go mod tidy
+    # you may remove this if you don't need go generate
+    - go generate ./...
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # Optional: exclude specific combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.buildTime={{.Date}}
+    main: ./main.go
+    binary: lnk
+
+archives:
+  - id: default
+    # this name template makes the OS and Arch compatible with the results of uname.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+    builds_info:
+      group: root
+      owner: root
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - '^style:'
+      - '^refactor:'
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+
+# GitHub release configuration
+release:
+  github:
+    owner: yarlson
+    name: lnk
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## Lnk {{.Tag}}
+    
+    Git-native dotfiles management that doesn't suck.
+    
+    ### Installation
+    
+    ```bash
+    # Quick install
+    curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash
+    
+    # Manual download
+    wget https://github.com/yarlson/lnk/releases/download/{{.Tag}}/lnk_{{.Os}}_{{.Arch}}.tar.gz
+    tar -xzf lnk_{{.Os}}_{{.Arch}}.tar.gz
+    sudo mv lnk /usr/local/bin/
+    ```
+    
+  footer: |
+    ---
+    **Full Changelog**: https://github.com/yarlson/lnk/compare/{{.PreviousTag}}...{{.Tag}}
+
+# Homebrew tap (optional - you can enable this later)
+# brews:
+#   - repository:
+#       owner: yarlson
+#       name: homebrew-tap
+#     homepage: "https://github.com/yarlson/lnk"
+#     description: "Git-native dotfiles management"
+#     license: "MIT"
+#     test: |
+#       system "#{bin}/lnk --version"
+
+# Docker images (optional)
+# dockers:
+#   - image_templates:
+#       - "yarlson/lnk:latest"
+#       - "yarlson/lnk:{{ .Tag }}"
+#       - "yarlson/lnk:v{{ .Major }}"
+#     dockerfile: Dockerfile
+#     build_flag_templates:
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.title={{.ProjectName}}"
+#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}" 
