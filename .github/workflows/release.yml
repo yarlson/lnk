@@ -32,6 +32,4 @@ jobs:
           version: latest
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # If you have a personal access token for cross-repo access, use it instead:
-          # GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

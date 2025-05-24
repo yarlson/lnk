@@ -9,6 +9,25 @@ This document describes how to create releases for the lnk project using GoRelea
 - GoReleaser is configured in `.goreleaser.yml`
 - GitHub Actions will handle the release process
 - Access to the [homebrew-lnk](https://github.com/yarlson/homebrew-lnk) tap repository
+- **Personal Access Token** set up as `HOMEBREW_TAP_TOKEN` secret (see Setup section)
+
+## Setup (One-time)
+
+### GitHub Personal Access Token
+
+For GoReleaser to update the Homebrew formula, you need a Personal Access Token:
+
+1. Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. Click "Generate new token" → "Generate new token (classic)"
+3. Name: "GoReleaser Homebrew Access"
+4. Scopes: Select `repo` (Full control of private repositories)
+5. Generate and copy the token
+6. In your `yarlson/lnk` repository:
+   - Go to Settings → Secrets and variables → Actions
+   - Add new repository secret: `HOMEBREW_TAP_TOKEN`
+   - Paste the token as the value
+
+This allows GoReleaser to automatically update the Homebrew formula in [homebrew-lnk](https://github.com/yarlson/homebrew-lnk).
 
 ## Creating a Release
 
