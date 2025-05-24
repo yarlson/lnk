@@ -11,10 +11,15 @@ lnk
 
 # Output of the go coverage tool
 *.out
+*.html
 
 # Go workspace file
 go.work
 go.work.sum
+
+# Build artifacts
+dist/
+bin/
 
 # IDE and editor files
 .vscode/
