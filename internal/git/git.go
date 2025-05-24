@@ -33,6 +33,19 @@ func (g *Git) Init() error {
 	return nil
 }
 
+// AddRemote adds a remote to the repository
+func (g *Git) AddRemote(name, url string) error {
+	cmd := exec.Command("git", "remote", "add", name, url)
+	cmd.Dir = g.repoPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git remote add failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}
+
 // AddAndCommit stages a file and commits it
 func (g *Git) AddAndCommit(filename, message string) error {
 	// Stage the file

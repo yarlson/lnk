@@ -2,7 +2,9 @@ package test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -200,6 +202,25 @@ func (suite *LnkIntegrationTestSuite) TestXDGConfigHomeFallback() {
 	// Check that the lnk directory was created under ~/.config/lnk
 	expectedDir := filepath.Join(homeDir, ".config", "lnk")
 	suite.DirExists(expectedDir)
+}
+
+func (suite *LnkIntegrationTestSuite) TestInitWithRemote() {
+	// Test that init with remote adds the origin remote
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	remoteURL := "https://github.com/user/dotfiles.git"
+	err = suite.lnk.AddRemote("origin", remoteURL)
+	suite.Require().NoError(err)
+
+	// Verify the remote was added by checking git config
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	cmd := exec.Command("git", "remote", "get-url", "origin")
+	cmd.Dir = lnkDir
+
+	output, err := cmd.Output()
+	suite.Require().NoError(err)
+	suite.Equal(remoteURL, strings.TrimSpace(string(output)))
 }
 
 func TestLnkIntegrationSuite(t *testing.T) {

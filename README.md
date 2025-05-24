@@ -33,6 +33,16 @@ lnk init
 
 This creates `$XDG_CONFIG_HOME/lnk` (or `~/.config/lnk`) and initializes a Git repository.
 
+### Initialize with remote
+
+```bash
+lnk init --remote https://github.com/user/dotfiles.git
+# or using short flag
+lnk init -r git@github.com:user/dotfiles.git
+```
+
+This initializes the repository and adds the specified URL as the `origin` remote, allowing you to sync your dotfiles with a Git hosting service.
+
 ### Add a file
 
 ```bash
@@ -61,6 +71,9 @@ This:
 # Initialize lnk
 lnk init
 
+# Initialize with remote for syncing with GitHub
+lnk init --remote https://github.com/user/dotfiles.git
+
 # Add some dotfiles
 lnk add ~/.bashrc
 lnk add ~/.vimrc
@@ -72,6 +85,9 @@ lnk rm ~/.vimrc
 # Your files are now managed in ~/.config/lnk with Git history
 cd ~/.config/lnk
 git log --oneline
+
+# If you initialized with a remote, you can push changes
+git push origin main
 ```
 
 ## Error Handling

@@ -56,6 +56,14 @@ func (l *Lnk) Init() error {
 	return nil
 }
 
+// AddRemote adds a remote to the repository
+func (l *Lnk) AddRemote(name, url string) error {
+	if err := l.git.AddRemote(name, url); err != nil {
+		return fmt.Errorf("failed to add remote %s: %w", name, err)
+	}
+	return nil
+}
+
 // Add moves a file to the repository and creates a symlink
 func (l *Lnk) Add(filePath string) error {
 	// Validate the file
