@@ -15,7 +15,7 @@ func New() *FileSystem {
 	return &FileSystem{}
 }
 
-// ValidateFileForAdd validates that a file can be added to lnk
+// ValidateFileForAdd validates that a file or directory can be added to lnk
 func (fs *FileSystem) ValidateFileForAdd(filePath string) error {
 	// Check if file exists
 	info, err := os.Stat(filePath)
@@ -26,14 +26,9 @@ func (fs *FileSystem) ValidateFileForAdd(filePath string) error {
 		return fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	// Check if it's a directory
-	if info.IsDir() {
-		return fmt.Errorf("directories are not supported: %s", filePath)
-	}
-
-	// Check if it's a regular file
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("only regular files are supported: %s", filePath)
+	// Allow both regular files and directories
+	if !info.Mode().IsRegular() && !info.IsDir() {
+		return fmt.Errorf("only regular files and directories are supported: %s", filePath)
 	}
 
 	return nil
@@ -106,6 +101,32 @@ func (fs *FileSystem) CreateSymlink(target, linkPath string) error {
 	// Create the symlink
 	if err := os.Symlink(relTarget, linkPath); err != nil {
 		return fmt.Errorf("failed to create symlink: %w", err)
+	}
+
+	return nil
+}
+
+// MoveDirectory moves a directory from source to destination recursively
+func (fs *FileSystem) MoveDirectory(src, dst string) error {
+	// Check if source is a directory
+	info, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("failed to stat source: %w", err)
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("source is not a directory: %s", src)
+	}
+
+	// Ensure destination parent directory exists
+	dstParent := filepath.Dir(dst)
+	if err := os.MkdirAll(dstParent, 0755); err != nil {
+		return fmt.Errorf("failed to create destination parent directory: %w", err)
+	}
+
+	// Use os.Rename which works for directories
+	if err := os.Rename(src, dst); err != nil {
+		return fmt.Errorf("failed to move directory from %s to %s: %w", src, dst, err)
 	}
 
 	return nil

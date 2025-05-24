@@ -9,7 +9,7 @@ Git-native dotfiles management that won't break your setup. Zero config, zero bl
 lnk init && lnk add ~/.vimrc && lnk push
 ```
 
-[![Tests](https://img.shields.io/badge/tests-17%20passing-green)](./test) [![Go](https://img.shields.io/badge/go-1.21+-blue)](https://golang.org) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-20%20passing-green)](./test) [![Go](https://img.shields.io/badge/go-1.21+-blue)](https://golang.org) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ## Why Lnk?
 
@@ -22,8 +22,9 @@ While chezmoi offers 100+ features and Home Manager requires learning Nix, **Lnk
 - ⚡ **Zero friction**: No YAML configs, no templates, no learning curve
 - 🔧 **Git-native**: Clean commits, standard workflow, no abstractions
 - 📦 **Zero dependencies**: Single binary vs Python/Node/Ruby runtimes
-- 🚀 **Production ready**: 17 integration tests, proper error handling
+- 🚀 **Production ready**: 20 integration tests, proper error handling
 - 🔄 **Smart sync**: Built-in status tracking and seamless multi-machine workflow
+- 📁 **Directory support**: Manage entire config directories or individual files
 
 **The market gap**: Tools are either too simple (and unsafe) or too complex (and overwhelming). Lnk is the **Goldilocks solution** – just right for developers who want reliability without complexity.
 
@@ -98,10 +99,11 @@ lnk init -r git@github.com:username/dotfiles.git # With remote
 - ✅ Protects existing repositories from overwrite
 - ✅ Validates remote conflicts before changes
 
-### Manage Files
+### Manage Files & Directories
 
 ```bash
 lnk add ~/.bashrc ~/.vimrc ~/.tmux.conf    # Add multiple files
+lnk add ~/.config/nvim ~/.ssh               # Add entire directories
 lnk rm ~/.bashrc                           # Remove from management
 ```
 
@@ -246,7 +248,7 @@ internal/
 
 ### What Makes It Robust
 
-- **17 integration tests** covering edge cases and error conditions
+- **20 integration tests** covering edge cases and error conditions
 - **Zero external dependencies** at runtime
 - **Atomic operations** with automatic rollback on failure
 - **Relative symlinks** for cross-platform compatibility

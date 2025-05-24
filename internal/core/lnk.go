@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/yarlson/lnk/internal/fs"
 	"github.com/yarlson/lnk/internal/git"
@@ -76,9 +78,9 @@ func (l *Lnk) AddRemote(name, url string) error {
 	return nil
 }
 
-// Add moves a file to the repository and creates a symlink
+// Add moves a file or directory to the repository and creates a symlink
 func (l *Lnk) Add(filePath string) error {
-	// Validate the file
+	// Validate the file or directory
 	if err := l.fs.ValidateFileForAdd(filePath); err != nil {
 		return err
 	}
@@ -93,30 +95,89 @@ func (l *Lnk) Add(filePath string) error {
 	basename := filepath.Base(absPath)
 	destPath := filepath.Join(l.repoPath, basename)
 
-	// Move file to repository
-	if err := l.fs.MoveFile(absPath, destPath); err != nil {
-		return fmt.Errorf("failed to move file to repository: %w", err)
+	// Check if it's a directory or file
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat path: %w", err)
+	}
+
+	// Move to repository (handles both files and directories)
+	if info.IsDir() {
+		if err := l.fs.MoveDirectory(absPath, destPath); err != nil {
+			return fmt.Errorf("failed to move directory to repository: %w", err)
+		}
+	} else {
+		if err := l.fs.MoveFile(absPath, destPath); err != nil {
+			return fmt.Errorf("failed to move file to repository: %w", err)
+		}
 	}
 
 	// Create symlink
 	if err := l.fs.CreateSymlink(destPath, absPath); err != nil {
-		// Try to restore the file if symlink creation fails
-		_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
+		// Try to restore the original if symlink creation fails
+		if info.IsDir() {
+			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
+		} else {
+			_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
+		}
 		return fmt.Errorf("failed to create symlink: %w", err)
 	}
 
-	// Stage and commit the file
-	if err := l.git.AddAndCommit(basename, fmt.Sprintf("lnk: added %s", basename)); err != nil {
+	// Add to .lnk tracking file
+	if err := l.addManagedItem(absPath); err != nil {
+		// Try to restore the original state if tracking fails
+		_ = os.Remove(absPath) // Ignore error in cleanup
+		if info.IsDir() {
+			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
+		} else {
+			_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
+		}
+		return fmt.Errorf("failed to update tracking file: %w", err)
+	}
+
+	// Add both the item and .lnk file to git in a single commit
+	if err := l.git.Add(basename); err != nil {
+		// Try to restore the original state if git add fails
+		_ = os.Remove(absPath)           // Ignore error in cleanup
+		_ = l.removeManagedItem(absPath) // Ignore error in cleanup
+		if info.IsDir() {
+			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
+		} else {
+			_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
+		}
+		return fmt.Errorf("failed to add item to git: %w", err)
+	}
+
+	// Add .lnk file to the same commit
+	if err := l.git.Add(".lnk"); err != nil {
+		// Try to restore the original state if git add fails
+		_ = os.Remove(absPath)           // Ignore error in cleanup
+		_ = l.removeManagedItem(absPath) // Ignore error in cleanup
+		if info.IsDir() {
+			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
+		} else {
+			_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
+		}
+		return fmt.Errorf("failed to add .lnk file to git: %w", err)
+	}
+
+	// Commit both changes together
+	if err := l.git.Commit(fmt.Sprintf("lnk: added %s", basename)); err != nil {
 		// Try to restore the original state if commit fails
-		_ = os.Remove(absPath)               // Ignore error in cleanup
-		_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
+		_ = os.Remove(absPath)           // Ignore error in cleanup
+		_ = l.removeManagedItem(absPath) // Ignore error in cleanup
+		if info.IsDir() {
+			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
+		} else {
+			_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
+		}
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
 	return nil
 }
 
-// Remove removes a symlink and restores the original file
+// Remove removes a symlink and restores the original file or directory
 func (l *Lnk) Remove(filePath string) error {
 	// Get absolute path
 	absPath, err := filepath.Abs(filePath)
@@ -142,22 +203,46 @@ func (l *Lnk) Remove(filePath string) error {
 
 	basename := filepath.Base(target)
 
+	// Check if target is a directory or file
+	info, err := os.Stat(target)
+	if err != nil {
+		return fmt.Errorf("failed to stat target: %w", err)
+	}
+
 	// Remove the symlink
 	if err := os.Remove(absPath); err != nil {
 		return fmt.Errorf("failed to remove symlink: %w", err)
 	}
 
-	// Move file back from repository
-	if err := l.fs.MoveFile(target, absPath); err != nil {
-		return fmt.Errorf("failed to restore file: %w", err)
+	// Remove from .lnk tracking file
+	if err := l.removeManagedItem(absPath); err != nil {
+		return fmt.Errorf("failed to update tracking file: %w", err)
 	}
 
-	// Remove from Git and commit
-	if err := l.git.RemoveAndCommit(basename, fmt.Sprintf("lnk: removed %s", basename)); err != nil {
-		// Try to restore the symlink if commit fails
-		_ = l.fs.MoveFile(absPath, target)      // Ignore error in cleanup
-		_ = l.fs.CreateSymlink(target, absPath) // Ignore error in cleanup
+	// Remove from Git first (while the item is still in the repository)
+	if err := l.git.Remove(basename); err != nil {
+		return fmt.Errorf("failed to remove from git: %w", err)
+	}
+
+	// Add .lnk file to the same commit
+	if err := l.git.Add(".lnk"); err != nil {
+		return fmt.Errorf("failed to add .lnk file to git: %w", err)
+	}
+
+	// Commit both changes together
+	if err := l.git.Commit(fmt.Sprintf("lnk: removed %s", basename)); err != nil {
 		return fmt.Errorf("failed to commit changes: %w", err)
+	}
+
+	// Move back from repository (handles both files and directories)
+	if info.IsDir() {
+		if err := l.fs.MoveDirectory(target, absPath); err != nil {
+			return fmt.Errorf("failed to restore directory: %w", err)
+		}
+	} else {
+		if err := l.fs.MoveFile(target, absPath); err != nil {
+			return fmt.Errorf("failed to restore file: %w", err)
+		}
 	}
 
 	return nil
@@ -249,29 +334,23 @@ func (l *Lnk) Pull() ([]string, error) {
 	return restored, nil
 }
 
-// RestoreSymlinks finds all files in the repository and ensures they have proper symlinks
+// RestoreSymlinks finds all managed items from .lnk file and ensures they have proper symlinks
 func (l *Lnk) RestoreSymlinks() ([]string, error) {
 	var restored []string
 
-	// Read all files in the repository
-	entries, err := os.ReadDir(l.repoPath)
+	// Get managed items from .lnk file
+	managedItems, err := l.getManagedItems()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read repository directory: %w", err)
+		return nil, fmt.Errorf("failed to get managed items: %w", err)
 	}
 
-	for _, entry := range entries {
-		// Skip hidden files and directories (like .git)
-		if entry.Name()[0] == '.' {
-			continue
-		}
+	for _, itemName := range managedItems {
+		repoItem := filepath.Join(l.repoPath, itemName)
 
-		// Skip directories
-		if entry.IsDir() {
-			continue
+		// Check if item exists in repository
+		if _, err := os.Stat(repoItem); os.IsNotExist(err) {
+			continue // Skip missing items
 		}
-
-		filename := entry.Name()
-		repoFile := filepath.Join(l.repoPath, filename)
 
 		// Determine where the symlink should be
 		// For config files, we'll place them in the user's home directory
@@ -280,26 +359,26 @@ func (l *Lnk) RestoreSymlinks() ([]string, error) {
 			return nil, fmt.Errorf("failed to get home directory: %w", err)
 		}
 
-		symlinkPath := filepath.Join(homeDir, filename)
+		symlinkPath := filepath.Join(homeDir, itemName)
 
 		// Check if symlink already exists and is correct
-		if l.isValidSymlink(symlinkPath, repoFile) {
+		if l.isValidSymlink(symlinkPath, repoItem) {
 			continue
 		}
 
 		// Remove existing file/symlink if it exists
 		if _, err := os.Lstat(symlinkPath); err == nil {
-			if err := os.Remove(symlinkPath); err != nil {
-				return nil, fmt.Errorf("failed to remove existing file %s: %w", symlinkPath, err)
+			if err := os.RemoveAll(symlinkPath); err != nil {
+				return nil, fmt.Errorf("failed to remove existing item %s: %w", symlinkPath, err)
 			}
 		}
 
 		// Create symlink
-		if err := l.fs.CreateSymlink(repoFile, symlinkPath); err != nil {
-			return nil, fmt.Errorf("failed to create symlink for %s: %w", filename, err)
+		if err := l.fs.CreateSymlink(repoItem, symlinkPath); err != nil {
+			return nil, fmt.Errorf("failed to create symlink for %s: %w", itemName, err)
 		}
 
-		restored = append(restored, filename)
+		restored = append(restored, itemName)
 	}
 
 	return restored, nil
@@ -340,4 +419,100 @@ func (l *Lnk) isValidSymlink(symlinkPath, expectedTarget string) bool {
 	}
 
 	return targetAbs == expectedAbs
+}
+
+// getManagedItems returns the list of managed files and directories from .lnk file
+func (l *Lnk) getManagedItems() ([]string, error) {
+	lnkFile := filepath.Join(l.repoPath, ".lnk")
+
+	// If .lnk file doesn't exist, return empty list
+	if _, err := os.Stat(lnkFile); os.IsNotExist(err) {
+		return []string{}, nil
+	}
+
+	content, err := os.ReadFile(lnkFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read .lnk file: %w", err)
+	}
+
+	if len(content) == 0 {
+		return []string{}, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	var items []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			items = append(items, line)
+		}
+	}
+
+	return items, nil
+}
+
+// addManagedItem adds an item to the .lnk tracking file
+func (l *Lnk) addManagedItem(itemPath string) error {
+	// Get current items
+	items, err := l.getManagedItems()
+	if err != nil {
+		return fmt.Errorf("failed to get managed items: %w", err)
+	}
+
+	// Get the basename for storage
+	basename := filepath.Base(itemPath)
+
+	// Check if already exists
+	for _, item := range items {
+		if item == basename {
+			return nil // Already managed
+		}
+	}
+
+	// Add new item
+	items = append(items, basename)
+
+	// Sort for consistent ordering
+	sort.Strings(items)
+
+	return l.writeManagedItems(items)
+}
+
+// removeManagedItem removes an item from the .lnk tracking file
+func (l *Lnk) removeManagedItem(itemPath string) error {
+	// Get current items
+	items, err := l.getManagedItems()
+	if err != nil {
+		return fmt.Errorf("failed to get managed items: %w", err)
+	}
+
+	// Get the basename for removal
+	basename := filepath.Base(itemPath)
+
+	// Remove item
+	var newItems []string
+	for _, item := range items {
+		if item != basename {
+			newItems = append(newItems, item)
+		}
+	}
+
+	return l.writeManagedItems(newItems)
+}
+
+// writeManagedItems writes the list of managed items to .lnk file
+func (l *Lnk) writeManagedItems(items []string) error {
+	lnkFile := filepath.Join(l.repoPath, ".lnk")
+
+	content := strings.Join(items, "\n")
+	if len(items) > 0 {
+		content += "\n"
+	}
+
+	err := os.WriteFile(lnkFile, []byte(content), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write .lnk file: %w", err)
+	}
+
+	return nil
 }

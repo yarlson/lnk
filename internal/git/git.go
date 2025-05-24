@@ -130,7 +130,7 @@ func (g *Git) IsLnkRepository() bool {
 // AddAndCommit stages a file and commits it
 func (g *Git) AddAndCommit(filename, message string) error {
 	// Stage the file
-	if err := g.add(filename); err != nil {
+	if err := g.Add(filename); err != nil {
 		return err
 	}
 
@@ -145,7 +145,7 @@ func (g *Git) AddAndCommit(filename, message string) error {
 // RemoveAndCommit removes a file from Git and commits the change
 func (g *Git) RemoveAndCommit(filename, message string) error {
 	// Remove the file from Git
-	if err := g.remove(filename); err != nil {
+	if err := g.Remove(filename); err != nil {
 		return err
 	}
 
@@ -157,8 +157,8 @@ func (g *Git) RemoveAndCommit(filename, message string) error {
 	return nil
 }
 
-// add stages a file
-func (g *Git) add(filename string) error {
+// Add stages a file
+func (g *Git) Add(filename string) error {
 	cmd := exec.Command("git", "add", filename)
 	cmd.Dir = g.repoPath
 
@@ -170,9 +170,21 @@ func (g *Git) add(filename string) error {
 	return nil
 }
 
-// remove removes a file from Git tracking
-func (g *Git) remove(filename string) error {
-	cmd := exec.Command("git", "rm", filename)
+// Remove removes a file from Git tracking
+func (g *Git) Remove(filename string) error {
+	// Check if it's a directory that needs -r flag
+	fullPath := filepath.Join(g.repoPath, filename)
+	info, err := os.Stat(fullPath)
+
+	var cmd *exec.Cmd
+	if err == nil && info.IsDir() {
+		// Use -r and --cached flags for directories (only remove from git, not filesystem)
+		cmd = exec.Command("git", "rm", "-r", "--cached", filename)
+	} else {
+		// Regular file (only remove from git, not filesystem)
+		cmd = exec.Command("git", "rm", "--cached", filename)
+	}
+
 	cmd.Dir = g.repoPath
 
 	output, err := cmd.CombinedOutput()

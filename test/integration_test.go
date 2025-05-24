@@ -169,14 +169,230 @@ func (suite *LnkIntegrationTestSuite) TestAddDirectory() {
 	err := suite.lnk.Init()
 	suite.Require().NoError(err)
 
-	// Create a directory
+	// Create a directory with files
 	testDir := filepath.Join(suite.tempDir, "testdir")
 	err = os.MkdirAll(testDir, 0755)
 	suite.Require().NoError(err)
 
+	// Add files to the directory
+	testFile1 := filepath.Join(testDir, "file1.txt")
+	err = os.WriteFile(testFile1, []byte("content1"), 0644)
+	suite.Require().NoError(err)
+
+	testFile2 := filepath.Join(testDir, "file2.txt")
+	err = os.WriteFile(testFile2, []byte("content2"), 0644)
+	suite.Require().NoError(err)
+
+	// Add the directory - should now succeed
 	err = suite.lnk.Add(testDir)
-	suite.Error(err)
-	suite.Contains(err.Error(), "directories are not supported")
+	suite.Require().NoError(err)
+
+	// Check that the directory is now a symlink
+	info, err := os.Lstat(testDir)
+	suite.Require().NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+
+	// Check that the directory exists in the repo
+	repoDir := filepath.Join(suite.tempDir, "lnk", "testdir")
+	suite.DirExists(repoDir)
+
+	// Check that files are preserved
+	repoFile1 := filepath.Join(repoDir, "file1.txt")
+	repoFile2 := filepath.Join(repoDir, "file2.txt")
+	suite.FileExists(repoFile1)
+	suite.FileExists(repoFile2)
+
+	content1, err := os.ReadFile(repoFile1)
+	suite.Require().NoError(err)
+	suite.Equal("content1", string(content1))
+
+	content2, err := os.ReadFile(repoFile2)
+	suite.Require().NoError(err)
+	suite.Equal("content2", string(content2))
+
+	// Check that .lnk file was created and contains the directory
+	lnkFile := filepath.Join(suite.tempDir, "lnk", ".lnk")
+	suite.FileExists(lnkFile)
+
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.Require().NoError(err)
+	suite.Contains(string(lnkContent), "testdir")
+
+	// Check that Git commit was made
+	commits, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+	suite.Len(commits, 1)
+	suite.Contains(commits[0], "lnk: added testdir")
+}
+
+func (suite *LnkIntegrationTestSuite) TestRemoveDirectory() {
+	// Initialize and add a directory first
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	testDir := filepath.Join(suite.tempDir, "testdir")
+	err = os.MkdirAll(testDir, 0755)
+	suite.Require().NoError(err)
+
+	testFile := filepath.Join(testDir, "config.txt")
+	content := "test config"
+	err = os.WriteFile(testFile, []byte(content), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testDir)
+	suite.Require().NoError(err)
+
+	// Now remove the directory
+	err = suite.lnk.Remove(testDir)
+	suite.Require().NoError(err)
+
+	// Check that the symlink is gone and regular directory is restored
+	info, err := os.Lstat(testDir)
+	suite.Require().NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink) // Not a symlink
+	suite.True(info.IsDir())                                // Is a directory
+
+	// Check that content is preserved
+	restoredContent, err := os.ReadFile(testFile)
+	suite.Require().NoError(err)
+	suite.Equal(content, string(restoredContent))
+
+	// Check that directory is removed from repo
+	repoDir := filepath.Join(suite.tempDir, "lnk", "testdir")
+	suite.NoDirExists(repoDir)
+
+	// Check that .lnk file no longer contains the directory
+	lnkFile := filepath.Join(suite.tempDir, "lnk", ".lnk")
+	if suite.FileExists(lnkFile) {
+		lnkContent, err := os.ReadFile(lnkFile)
+		suite.Require().NoError(err)
+		suite.NotContains(string(lnkContent), "testdir")
+	}
+
+	// Check that Git commit was made
+	commits, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+	suite.Len(commits, 2) // add + remove
+	suite.Contains(commits[0], "lnk: removed testdir")
+	suite.Contains(commits[1], "lnk: added testdir")
+}
+
+func (suite *LnkIntegrationTestSuite) TestLnkFileTracking() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Add a directory
+	testDir := filepath.Join(suite.tempDir, ".ssh")
+	err = os.MkdirAll(testDir, 0700)
+	suite.Require().NoError(err)
+
+	configFile := filepath.Join(testDir, "config")
+	err = os.WriteFile(configFile, []byte("Host example.com"), 0600)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testDir)
+	suite.Require().NoError(err)
+
+	// Check .lnk file contains both entries
+	lnkFile := filepath.Join(suite.tempDir, "lnk", ".lnk")
+	suite.FileExists(lnkFile)
+
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.Require().NoError(err)
+
+	lines := strings.Split(strings.TrimSpace(string(lnkContent)), "\n")
+	suite.Len(lines, 2)
+	suite.Contains(lines, ".bashrc")
+	suite.Contains(lines, ".ssh")
+
+	// Remove a file and check .lnk is updated
+	err = suite.lnk.Remove(testFile)
+	suite.Require().NoError(err)
+
+	lnkContent, err = os.ReadFile(lnkFile)
+	suite.Require().NoError(err)
+
+	lines = strings.Split(strings.TrimSpace(string(lnkContent)), "\n")
+	suite.Len(lines, 1)
+	suite.Contains(lines, ".ssh")
+	suite.NotContains(lines, ".bashrc")
+}
+
+func (suite *LnkIntegrationTestSuite) TestPullWithDirectories() {
+	// Initialize repo
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add remote for pull to work
+	err = suite.lnk.AddRemote("origin", "https://github.com/test/dotfiles.git")
+	suite.Require().NoError(err)
+
+	// Create a directory and .lnk file in the repo directly to simulate a pull
+	repoDir := filepath.Join(suite.tempDir, "lnk", ".config")
+	err = os.MkdirAll(repoDir, 0755)
+	suite.Require().NoError(err)
+
+	configFile := filepath.Join(repoDir, "app.conf")
+	content := "setting=value"
+	err = os.WriteFile(configFile, []byte(content), 0644)
+	suite.Require().NoError(err)
+
+	// Create .lnk file
+	lnkFile := filepath.Join(suite.tempDir, "lnk", ".lnk")
+	err = os.WriteFile(lnkFile, []byte(".config\n"), 0644)
+	suite.Require().NoError(err)
+
+	// Get home directory for the test
+	homeDir, err := os.UserHomeDir()
+	suite.Require().NoError(err)
+
+	targetDir := filepath.Join(homeDir, ".config")
+
+	// Clean up the test directory after the test
+	defer func() {
+		_ = os.RemoveAll(targetDir)
+	}()
+
+	// Create a regular directory in home to simulate conflict scenario
+	err = os.MkdirAll(targetDir, 0755)
+	suite.Require().NoError(err)
+	err = os.WriteFile(filepath.Join(targetDir, "different.conf"), []byte("different"), 0644)
+	suite.Require().NoError(err)
+
+	// Pull should restore symlinks and handle conflicts
+	restored, err := suite.lnk.Pull()
+	// In tests, pull will fail because we don't have real remotes, but that's expected
+	// We can still test the symlink restoration part
+	if err != nil {
+		suite.Contains(err.Error(), "git pull failed")
+		// Test symlink restoration directly
+		restored, err = suite.lnk.RestoreSymlinks()
+		suite.Require().NoError(err)
+	}
+
+	// Should have restored the symlink
+	suite.GreaterOrEqual(len(restored), 1)
+	if len(restored) > 0 {
+		suite.Equal(".config", restored[0])
+	}
+
+	// Check that directory is back to being a symlink
+	info, err := os.Lstat(targetDir)
+	suite.Require().NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+
+	// Check content is preserved from repo
+	repoContent, err := os.ReadFile(configFile)
+	suite.Require().NoError(err)
+	suite.Equal(content, string(repoContent))
 }
 
 func (suite *LnkIntegrationTestSuite) TestRemoveNonSymlink() {
