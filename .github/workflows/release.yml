@@ -23,7 +23,7 @@ jobs:
           go-version: '1.24'
 
       - name: Run tests
-        run: go test ./test
+        run: go test ./
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
