@@ -329,7 +329,7 @@ We follow standard Go practices:
 
 ## License
 
-MIT License - use it however you want.
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
