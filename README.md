@@ -4,6 +4,17 @@
 
 Lnk is a minimalist CLI tool for managing dotfiles using symlinks and Git. It moves files into a managed repository directory, replaces them with symlinks, and commits changes to Git. That's it—no templating, no secrets, no config file.
 
+## ⚠️ Development Status
+
+**This tool is under heavy development. Use at your own risk.**
+
+While Lnk is functional and tested, it's still in active development. The API and behavior may change between versions. Please:
+
+- **Backup your dotfiles** before using Lnk
+- **Test in a safe environment** first
+- **Review changes** before committing to important repositories
+- **Report issues** if you encounter any problems
+
 ## Features
 
 - **Simple**: Just three commands: `init`, `add`, and `rm`
@@ -50,6 +61,7 @@ lnk add ~/.bashrc
 ```
 
 This:
+
 1. Moves `~/.bashrc` to `$XDG_CONFIG_HOME/lnk/.bashrc`
 2. Creates a symlink from `~/.bashrc` to the repository
 3. Commits the change with message "lnk: added .bashrc"
@@ -61,6 +73,7 @@ lnk rm ~/.bashrc
 ```
 
 This:
+
 1. Removes the symlink `~/.bashrc`
 2. Moves the file back from the repository to `~/.bashrc`
 3. Removes it from Git tracking and commits with message "lnk: removed .bashrc"
