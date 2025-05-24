@@ -135,7 +135,7 @@ func (g *Git) AddAndCommit(filename, message string) error {
 	}
 
 	// Commit the changes
-	if err := g.commit(message); err != nil {
+	if err := g.Commit(message); err != nil {
 		return err
 	}
 
@@ -150,7 +150,7 @@ func (g *Git) RemoveAndCommit(filename, message string) error {
 	}
 
 	// Commit the changes
-	if err := g.commit(message); err != nil {
+	if err := g.Commit(message); err != nil {
 		return err
 	}
 
@@ -183,8 +183,8 @@ func (g *Git) remove(filename string) error {
 	return nil
 }
 
-// commit creates a commit with the given message
-func (g *Git) commit(message string) error {
+// Commit creates a commit with the given message
+func (g *Git) Commit(message string) error {
 	// Configure git user if not already configured
 	if err := g.ensureGitConfig(); err != nil {
 		return err
@@ -257,4 +257,191 @@ func (g *Git) GetCommits() ([]string, error) {
 	}
 
 	return commits, nil
+}
+
+// GetRemoteInfo returns information about the default remote
+func (g *Git) GetRemoteInfo() (string, error) {
+	// First try to get origin remote
+	url, err := g.getRemoteURL("origin")
+	if err != nil {
+		// If origin doesn't exist, try to get any remote
+		cmd := exec.Command("git", "remote")
+		cmd.Dir = g.repoPath
+
+		output, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("failed to list remotes: %w", err)
+		}
+
+		remotes := strings.Split(strings.TrimSpace(string(output)), "\n")
+		if len(remotes) == 0 || remotes[0] == "" {
+			return "", fmt.Errorf("no remote configured")
+		}
+
+		// Use the first remote
+		url, err = g.getRemoteURL(remotes[0])
+		if err != nil {
+			return "", fmt.Errorf("failed to get remote URL: %w", err)
+		}
+	}
+
+	return url, nil
+}
+
+// StatusInfo contains repository status information
+type StatusInfo struct {
+	Ahead  int
+	Behind int
+	Remote string
+}
+
+// GetStatus returns the repository status relative to remote
+func (g *Git) GetStatus() (*StatusInfo, error) {
+	// Check if we have a remote
+	_, err := g.GetRemoteInfo()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the remote tracking branch
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	cmd.Dir = g.repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		// No upstream branch set, assume origin/main
+		remoteBranch := "origin/main"
+		return &StatusInfo{
+			Ahead:  g.getAheadCount(remoteBranch),
+			Behind: 0, // Can't be behind if no upstream
+			Remote: remoteBranch,
+		}, nil
+	}
+
+	remoteBranch := strings.TrimSpace(string(output))
+
+	return &StatusInfo{
+		Ahead:  g.getAheadCount(remoteBranch),
+		Behind: g.getBehindCount(remoteBranch),
+		Remote: remoteBranch,
+	}, nil
+}
+
+// getAheadCount returns how many commits ahead of remote
+func (g *Git) getAheadCount(remoteBranch string) int {
+	cmd := exec.Command("git", "rev-list", "--count", fmt.Sprintf("%s..HEAD", remoteBranch))
+	cmd.Dir = g.repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		// If remote branch doesn't exist, count all local commits
+		cmd = exec.Command("git", "rev-list", "--count", "HEAD")
+		cmd.Dir = g.repoPath
+
+		output, err = cmd.Output()
+		if err != nil {
+			return 0
+		}
+	}
+
+	count := strings.TrimSpace(string(output))
+	if count == "" {
+		return 0
+	}
+
+	// Convert to int
+	var ahead int
+	if _, err := fmt.Sscanf(count, "%d", &ahead); err != nil {
+		return 0
+	}
+
+	return ahead
+}
+
+// getBehindCount returns how many commits behind remote
+func (g *Git) getBehindCount(remoteBranch string) int {
+	cmd := exec.Command("git", "rev-list", "--count", fmt.Sprintf("HEAD..%s", remoteBranch))
+	cmd.Dir = g.repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+
+	count := strings.TrimSpace(string(output))
+	if count == "" {
+		return 0
+	}
+
+	// Convert to int
+	var behind int
+	if _, err := fmt.Sscanf(count, "%d", &behind); err != nil {
+		return 0
+	}
+
+	return behind
+}
+
+// HasChanges checks if there are uncommitted changes
+func (g *Git) HasChanges() (bool, error) {
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = g.repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("git status failed: %w", err)
+	}
+
+	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// AddAll stages all changes in the repository
+func (g *Git) AddAll() error {
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = g.repoPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git add failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// Push pushes changes to remote
+func (g *Git) Push() error {
+	// First ensure we have a remote configured
+	_, err := g.GetRemoteInfo()
+	if err != nil {
+		return fmt.Errorf("cannot push: %w", err)
+	}
+
+	cmd := exec.Command("git", "push", "-u", "origin", "main")
+	cmd.Dir = g.repoPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git push failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// Pull pulls changes from remote
+func (g *Git) Pull() error {
+	// First ensure we have a remote configured
+	_, err := g.GetRemoteInfo()
+	if err != nil {
+		return fmt.Errorf("cannot pull: %w", err)
+	}
+
+	cmd := exec.Command("git", "pull", "origin", "main")
+	cmd.Dir = g.repoPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git pull failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
 }

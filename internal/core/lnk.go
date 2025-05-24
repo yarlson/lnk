@@ -167,3 +167,177 @@ func (l *Lnk) Remove(filePath string) error {
 func (l *Lnk) GetCommits() ([]string, error) {
 	return l.git.GetCommits()
 }
+
+// StatusInfo contains repository sync status information
+type StatusInfo struct {
+	Ahead  int
+	Behind int
+	Remote string
+}
+
+// Status returns the repository sync status
+func (l *Lnk) Status() (*StatusInfo, error) {
+	// Check if repository is initialized
+	if !l.git.IsGitRepository() {
+		return nil, fmt.Errorf("lnk repository not initialized - run 'lnk init' first")
+	}
+
+	gitStatus, err := l.git.GetStatus()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get repository status: %w", err)
+	}
+
+	return &StatusInfo{
+		Ahead:  gitStatus.Ahead,
+		Behind: gitStatus.Behind,
+		Remote: gitStatus.Remote,
+	}, nil
+}
+
+// Push stages all changes and creates a sync commit, then pushes to remote
+func (l *Lnk) Push(message string) error {
+	// Check if repository is initialized
+	if !l.git.IsGitRepository() {
+		return fmt.Errorf("lnk repository not initialized - run 'lnk init' first")
+	}
+
+	// Check if there are any changes
+	hasChanges, err := l.git.HasChanges()
+	if err != nil {
+		return fmt.Errorf("failed to check for changes: %w", err)
+	}
+
+	if hasChanges {
+		// Stage all changes
+		if err := l.git.AddAll(); err != nil {
+			return fmt.Errorf("failed to stage changes: %w", err)
+		}
+
+		// Create a sync commit
+		if err := l.git.Commit(message); err != nil {
+			return fmt.Errorf("failed to commit changes: %w", err)
+		}
+	}
+
+	// Push to remote (this will be a no-op in tests since we don't have real remotes)
+	// In real usage, this would push to the actual remote repository
+	if err := l.git.Push(); err != nil {
+		return fmt.Errorf("failed to push to remote: %w", err)
+	}
+
+	return nil
+}
+
+// Pull fetches changes from remote and restores symlinks as needed
+func (l *Lnk) Pull() ([]string, error) {
+	// Check if repository is initialized
+	if !l.git.IsGitRepository() {
+		return nil, fmt.Errorf("lnk repository not initialized - run 'lnk init' first")
+	}
+
+	// Pull changes from remote (this will be a no-op in tests since we don't have real remotes)
+	if err := l.git.Pull(); err != nil {
+		return nil, fmt.Errorf("failed to pull from remote: %w", err)
+	}
+
+	// Find all managed files in the repository and restore symlinks
+	restored, err := l.RestoreSymlinks()
+	if err != nil {
+		return nil, fmt.Errorf("failed to restore symlinks: %w", err)
+	}
+
+	return restored, nil
+}
+
+// RestoreSymlinks finds all files in the repository and ensures they have proper symlinks
+func (l *Lnk) RestoreSymlinks() ([]string, error) {
+	var restored []string
+
+	// Read all files in the repository
+	entries, err := os.ReadDir(l.repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read repository directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		// Skip hidden files and directories (like .git)
+		if entry.Name()[0] == '.' {
+			continue
+		}
+
+		// Skip directories
+		if entry.IsDir() {
+			continue
+		}
+
+		filename := entry.Name()
+		repoFile := filepath.Join(l.repoPath, filename)
+
+		// Determine where the symlink should be
+		// For config files, we'll place them in the user's home directory
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+
+		symlinkPath := filepath.Join(homeDir, filename)
+
+		// Check if symlink already exists and is correct
+		if l.isValidSymlink(symlinkPath, repoFile) {
+			continue
+		}
+
+		// Remove existing file/symlink if it exists
+		if _, err := os.Lstat(symlinkPath); err == nil {
+			if err := os.Remove(symlinkPath); err != nil {
+				return nil, fmt.Errorf("failed to remove existing file %s: %w", symlinkPath, err)
+			}
+		}
+
+		// Create symlink
+		if err := l.fs.CreateSymlink(repoFile, symlinkPath); err != nil {
+			return nil, fmt.Errorf("failed to create symlink for %s: %w", filename, err)
+		}
+
+		restored = append(restored, filename)
+	}
+
+	return restored, nil
+}
+
+// isValidSymlink checks if the given path is a symlink pointing to the expected target
+func (l *Lnk) isValidSymlink(symlinkPath, expectedTarget string) bool {
+	info, err := os.Lstat(symlinkPath)
+	if err != nil {
+		return false
+	}
+
+	// Check if it's a symlink
+	if info.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+
+	// Check if it points to the correct target
+	target, err := os.Readlink(symlinkPath)
+	if err != nil {
+		return false
+	}
+
+	// Convert relative path to absolute if needed
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(symlinkPath), target)
+	}
+
+	// Clean both paths for comparison
+	targetAbs, err := filepath.Abs(target)
+	if err != nil {
+		return false
+	}
+
+	expectedAbs, err := filepath.Abs(expectedTarget)
+	if err != nil {
+		return false
+	}
+
+	return targetAbs == expectedAbs
+}

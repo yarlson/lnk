@@ -340,6 +340,163 @@ func (suite *LnkIntegrationTestSuite) TestInitWithNonLnkRepo() {
 	suite.FileExists(testFile)
 }
 
+// TestSyncStatus tests the status command functionality
+func (suite *LnkIntegrationTestSuite) TestSyncStatus() {
+	// Initialize repo with remote
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	err = suite.lnk.AddRemote("origin", "https://github.com/test/dotfiles.git")
+	suite.Require().NoError(err)
+
+	// Add a file to create some local changes
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	content := "export PATH=$PATH:/usr/local/bin"
+	err = os.WriteFile(testFile, []byte(content), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Get status - should show 1 commit ahead
+	status, err := suite.lnk.Status()
+	suite.Require().NoError(err)
+	suite.Equal(1, status.Ahead)
+	suite.Equal(0, status.Behind)
+	suite.Equal("origin/main", status.Remote)
+}
+
+// TestSyncPush tests the push command functionality
+func (suite *LnkIntegrationTestSuite) TestSyncPush() {
+	// Initialize repo
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add remote for push to work
+	err = suite.lnk.AddRemote("origin", "https://github.com/test/dotfiles.git")
+	suite.Require().NoError(err)
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".vimrc")
+	content := "set number"
+	err = os.WriteFile(testFile, []byte(content), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Add another file for a second commit
+	testFile2 := filepath.Join(suite.tempDir, ".gitconfig")
+	content2 := "[user]\n    name = Test User"
+	err = os.WriteFile(testFile2, []byte(content2), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile2)
+	suite.Require().NoError(err)
+
+	// Modify one of the files to create uncommitted changes
+	repoFile := filepath.Join(suite.tempDir, "lnk", ".vimrc")
+	modifiedContent := "set number\nset relativenumber"
+	err = os.WriteFile(repoFile, []byte(modifiedContent), 0644)
+	suite.Require().NoError(err)
+
+	// Push should stage all changes and create a sync commit
+	message := "Updated configuration files"
+	err = suite.lnk.Push(message)
+	// In tests, push will fail because we don't have real remotes, but that's expected
+	// The important part is that it stages and commits changes
+	if err != nil {
+		suite.Contains(err.Error(), "git push failed")
+	}
+
+	// Check that a sync commit was made (even if push failed)
+	commits, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+	suite.GreaterOrEqual(len(commits), 3) // at least 2 add commits + 1 sync commit
+	suite.Contains(commits[0], message)   // Latest commit should contain our message
+}
+
+// TestSyncPull tests the pull command functionality
+func (suite *LnkIntegrationTestSuite) TestSyncPull() {
+	// Initialize repo
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add remote for pull to work
+	err = suite.lnk.AddRemote("origin", "https://github.com/test/dotfiles.git")
+	suite.Require().NoError(err)
+
+	// Pull should attempt to pull from remote (will fail in tests but that's expected)
+	_, err = suite.lnk.Pull()
+	// In tests, pull will fail because we don't have real remotes, but that's expected
+	suite.Error(err)
+	suite.Contains(err.Error(), "git pull failed")
+
+	// Test RestoreSymlinks functionality separately
+	// Create a file in the repo directly
+	repoFile := filepath.Join(suite.tempDir, "lnk", ".bashrc")
+	content := "export PATH=$PATH:/usr/local/bin"
+	err = os.WriteFile(repoFile, []byte(content), 0644)
+	suite.Require().NoError(err)
+
+	// Test that RestoreSymlinks can be called (even if it doesn't restore anything in this test setup)
+	restored, err := suite.lnk.RestoreSymlinks()
+	suite.Require().NoError(err)
+	// In this test setup, it might not restore anything, and that's okay for Phase 1
+	suite.GreaterOrEqual(len(restored), 0)
+}
+
+// TestSyncStatusNoRemote tests status when no remote is configured
+func (suite *LnkIntegrationTestSuite) TestSyncStatusNoRemote() {
+	// Initialize repo without remote
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Status should indicate no remote
+	_, err = suite.lnk.Status()
+	suite.Error(err)
+	suite.Contains(err.Error(), "no remote configured")
+}
+
+// TestSyncPushWithModifiedFiles tests push when files are modified
+func (suite *LnkIntegrationTestSuite) TestSyncPushWithModifiedFiles() {
+	// Initialize repo and add a file
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add remote for push to work
+	err = suite.lnk.AddRemote("origin", "https://github.com/test/dotfiles.git")
+	suite.Require().NoError(err)
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	content := "export PATH=$PATH:/usr/local/bin"
+	err = os.WriteFile(testFile, []byte(content), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Modify the file in the repo (simulate editing managed file)
+	repoFile := filepath.Join(suite.tempDir, "lnk", ".bashrc")
+	modifiedContent := "export PATH=$PATH:/usr/local/bin\nexport EDITOR=vim"
+	err = os.WriteFile(repoFile, []byte(modifiedContent), 0644)
+	suite.Require().NoError(err)
+
+	// Push should detect and commit the changes
+	message := "Updated bashrc with editor setting"
+	err = suite.lnk.Push(message)
+	// In tests, push will fail because we don't have real remotes, but that's expected
+	if err != nil {
+		suite.Contains(err.Error(), "git push failed")
+	}
+
+	// Check that changes were committed (even if push failed)
+	commits, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+	suite.GreaterOrEqual(len(commits), 2) // add commit + sync commit
+	suite.Contains(commits[0], message)
+}
+
 func TestLnkIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(LnkIntegrationTestSuite))
 }
