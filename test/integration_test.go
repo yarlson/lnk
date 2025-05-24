@@ -65,6 +65,13 @@ func (suite *LnkIntegrationTestSuite) TestInit() {
 	// Verify it's a non-bare repo
 	configPath := filepath.Join(gitDir, "config")
 	suite.FileExists(configPath)
+
+	// Verify the default branch is set to 'main'
+	cmd := exec.Command("git", "symbolic-ref", "HEAD")
+	cmd.Dir = lnkDir
+	output, err := cmd.Output()
+	suite.Require().NoError(err)
+	suite.Equal("refs/heads/main", strings.TrimSpace(string(output)))
 }
 
 func (suite *LnkIntegrationTestSuite) TestAddFile() {

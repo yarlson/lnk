@@ -22,12 +22,28 @@ func New(repoPath string) *Git {
 
 // Init initializes a new Git repository
 func (g *Git) Init() error {
-	cmd := exec.Command("git", "init")
+	// Try using git init -b main first (Git 2.28+)
+	cmd := exec.Command("git", "init", "-b", "main")
 	cmd.Dir = g.repoPath
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git init failed: %w\nOutput: %s", err, string(output))
+		// Fallback to regular init + branch rename for older Git versions
+		cmd = exec.Command("git", "init")
+		cmd.Dir = g.repoPath
+
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("git init failed: %w\nOutput: %s", err, string(output))
+		}
+
+		// Set the default branch to main
+		cmd = exec.Command("git", "symbolic-ref", "HEAD", "refs/heads/main")
+		cmd.Dir = g.repoPath
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to set default branch to main: %w", err)
+		}
 	}
 
 	return nil

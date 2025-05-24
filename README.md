@@ -42,7 +42,7 @@ sudo mv lnk /usr/local/bin/
 lnk init
 ```
 
-This creates `$XDG_CONFIG_HOME/lnk` (or `~/.config/lnk`) and initializes a Git repository.
+This creates `$XDG_CONFIG_HOME/lnk` (or `~/.config/lnk`) and initializes a Git repository with `main` as the default branch.
 
 ### Initialize with remote
 
@@ -52,7 +52,7 @@ lnk init --remote https://github.com/user/dotfiles.git
 lnk init -r git@github.com:user/dotfiles.git
 ```
 
-This initializes the repository and adds the specified URL as the `origin` remote, allowing you to sync your dotfiles with a Git hosting service.
+This initializes the repository with `main` as the default branch and adds the specified URL as the `origin` remote, allowing you to sync your dotfiles with a Git hosting service.
 
 ### Add a file
 
