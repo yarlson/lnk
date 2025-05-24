@@ -24,9 +24,9 @@ func newAddCmd() *cobra.Command {
 			}
 
 			basename := filepath.Base(filePath)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✨ \033[1mAdded %s to lnk\033[0m\n", basename)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s\033[0m\n", filePath, basename)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   📝 Use \033[1mlnk push\033[0m to sync to remote\n")
+			printf(cmd, "✨ \033[1mAdded %s to lnk\033[0m\n", basename)
+			printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s\033[0m\n", filePath, basename)
+			printf(cmd, "   📝 Use \033[1mlnk push\033[0m to sync to remote\n")
 			return nil
 		},
 	}

@@ -21,20 +21,20 @@ func newPullCmd() *cobra.Command {
 			}
 
 			if len(restored) > 0 {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "⬇️  \033[1;32mSuccessfully pulled changes\033[0m\n")
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   🔗 Restored \033[1m%d symlink", len(restored))
+				printf(cmd, "⬇️  \033[1;32mSuccessfully pulled changes\033[0m\n")
+				printf(cmd, "   🔗 Restored \033[1m%d symlink", len(restored))
 				if len(restored) > 1 {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "s")
+					printf(cmd, "s")
 				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\033[0m:\n")
+				printf(cmd, "\033[0m:\n")
 				for _, file := range restored {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "      ✨ \033[36m%s\033[0m\n", file)
+					printf(cmd, "      ✨ \033[36m%s\033[0m\n", file)
 				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n   🎉 Your dotfiles are synced and ready!\n")
+				printf(cmd, "\n   🎉 Your dotfiles are synced and ready!\n")
 			} else {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "⬇️  \033[1;32mSuccessfully pulled changes\033[0m\n")
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   ✅ All symlinks already in place\n")
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   🎉 Everything is up to date!\n")
+				printf(cmd, "⬇️  \033[1;32mSuccessfully pulled changes\033[0m\n")
+				printf(cmd, "   ✅ All symlinks already in place\n")
+				printf(cmd, "   🎉 Everything is up to date!\n")
 			}
 
 			return nil

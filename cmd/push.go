@@ -25,10 +25,10 @@ func newPushCmd() *cobra.Command {
 				return fmt.Errorf("failed to push changes: %w", err)
 			}
 
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "🚀 \033[1;32mSuccessfully pushed changes\033[0m\n")
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   💾 Commit: \033[90m%s\033[0m\n", message)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   📡 Synced to remote\n")
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   ✨ Your dotfiles are up to date!\n")
+			printf(cmd, "🚀 \033[1;32mSuccessfully pushed changes\033[0m\n")
+			printf(cmd, "   💾 Commit: \033[90m%s\033[0m\n", message)
+			printf(cmd, "   📡 Synced to remote\n")
+			printf(cmd, "   ✨ Your dotfiles are up to date!\n")
 			return nil
 		},
 	}

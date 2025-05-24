@@ -24,9 +24,9 @@ func newRemoveCmd() *cobra.Command {
 			}
 
 			basename := filepath.Base(filePath)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "🗑️  \033[1mRemoved %s from lnk\033[0m\n", basename)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   ↩️  \033[90m~/.config/lnk/%s\033[0m → \033[36m%s\033[0m\n", basename, filePath)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "   📄 Original file restored\n")
+			printf(cmd, "🗑️  \033[1mRemoved %s from lnk\033[0m\n", basename)
+			printf(cmd, "   ↩️  \033[90m~/.config/lnk/%s\033[0m → \033[36m%s\033[0m\n", basename, filePath)
+			printf(cmd, "   📄 Original file restored\n")
 			return nil
 		},
 	}
