@@ -34,9 +34,9 @@ curl -sSL https://github.com/yarlson/lnk/releases/latest/download/lnk-linux-amd6
 chmod +x lnk && sudo mv lnk /usr/local/bin/
 
 # Use (60 seconds)
-lnk init
+lnk init -r git@github.com:you/dotfiles.git
 lnk add ~/.bashrc ~/.vimrc ~/.gitconfig
-cd ~/.config/lnk && git remote add origin git@github.com:you/dotfiles.git && git push -u origin main
+cd ~/.config/lnk && git push -u origin main
 ```
 
 **That's it.** Your dotfiles are now version-controlled and synced.
@@ -107,13 +107,13 @@ lnk rm ~/.bashrc                           # Remove from management
 
 ```bash
 # Set up on new machine
+lnk init -r git@github.com:you/dotfiles.git
+cd ~/.config/lnk && git pull  # Get your existing dotfiles
+# lnk automatically detects existing symlinks
+
+# Or clone existing manually for complex setups
 git clone git@github.com:you/dotfiles.git ~/.config/lnk
 cd ~/.config/lnk && find . -name ".*" -exec ln -sf ~/.config/lnk/{} ~/{} \;
-
-# Or use lnk for safety
-lnk init -r git@github.com:you/dotfiles.git
-git pull  # Get your existing dotfiles
-# lnk automatically detects existing symlinks
 ```
 
 ## Examples
@@ -122,6 +122,9 @@ git pull  # Get your existing dotfiles
 <summary><strong>📁 Common Development Setup</strong></summary>
 
 ```bash
+# Initialize with remote (recommended)
+lnk init -r git@github.com:you/dotfiles.git
+
 # Shell & terminal
 lnk add ~/.bashrc ~/.zshrc ~/.tmux.conf
 
@@ -130,6 +133,9 @@ lnk add ~/.vimrc ~/.gitconfig ~/.ssh/config
 
 # Language-specific
 lnk add ~/.npmrc ~/.cargo/config.toml ~/.pylintrc
+
+# Push to remote
+cd ~/.config/lnk && git push -u origin main
 
 # Check what's managed
 cd ~/.config/lnk && git log --oneline
