@@ -94,14 +94,14 @@ release:
     # Quick install
     curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash
     
-    # Manual download
-    wget https://github.com/yarlson/lnk/releases/download/{{.Tag}}/lnk_{{.Os}}_{{.Arch}}.tar.gz
-    tar -xzf lnk_{{.Os}}_{{.Arch}}.tar.gz
-    sudo mv lnk /usr/local/bin/
-    
     # Homebrew
     brew tap yarlson/lnk
     brew install lnk
+    
+    # Manual download
+    # Download the appropriate archive for your platform from the assets below
+    # Extract and move to your PATH:
+    # tar -xzf lnk_*.tar.gz && sudo mv lnk /usr/local/bin/
     ```
     
   footer: |
