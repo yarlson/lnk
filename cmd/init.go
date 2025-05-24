@@ -15,15 +15,12 @@ var initCmd = &cobra.Command{
 		remote, _ := cmd.Flags().GetString("remote")
 
 		lnk := core.NewLnk()
-		if err := lnk.Init(); err != nil {
+		if err := lnk.InitWithRemote(remote); err != nil {
 			return fmt.Errorf("failed to initialize lnk: %w", err)
 		}
 
 		if remote != "" {
-			if err := lnk.AddRemote("origin", remote); err != nil {
-				return fmt.Errorf("failed to add remote: %w", err)
-			}
-			fmt.Printf("Initialized lnk repository with remote: %s\n", remote)
+			fmt.Printf("Initialized lnk repository by cloning: %s\n", remote)
 		} else {
 			fmt.Println("Initialized lnk repository")
 		}
@@ -33,6 +30,6 @@ var initCmd = &cobra.Command{
 }
 
 func init() {
-	initCmd.Flags().StringP("remote", "r", "", "Add origin remote URL to the repository")
+	initCmd.Flags().StringP("remote", "r", "", "Clone from remote URL instead of creating empty repository")
 	rootCmd.AddCommand(initCmd)
 }

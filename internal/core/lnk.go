@@ -45,6 +45,16 @@ func getRepoPath() string {
 
 // Init initializes the lnk repository
 func (l *Lnk) Init() error {
+	return l.InitWithRemote("")
+}
+
+// InitWithRemote initializes the lnk repository, optionally cloning from a remote
+func (l *Lnk) InitWithRemote(remoteURL string) error {
+	if remoteURL != "" {
+		// Clone from remote
+		return l.Clone(remoteURL)
+	}
+
 	// Create the repository directory
 	if err := os.MkdirAll(l.repoPath, 0755); err != nil {
 		return fmt.Errorf("failed to create lnk directory: %w", err)
@@ -67,6 +77,14 @@ func (l *Lnk) Init() error {
 		return fmt.Errorf("failed to initialize git repository: %w", err)
 	}
 
+	return nil
+}
+
+// Clone clones a repository from the given URL
+func (l *Lnk) Clone(url string) error {
+	if err := l.git.Clone(url); err != nil {
+		return fmt.Errorf("failed to clone repository: %w", err)
+	}
 	return nil
 }
 

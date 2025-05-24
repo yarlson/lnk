@@ -457,3 +457,43 @@ func (g *Git) Pull() error {
 
 	return nil
 }
+
+// Clone clones a repository from the given URL
+func (g *Git) Clone(url string) error {
+	// Remove the directory if it exists to ensure clean clone
+	if err := os.RemoveAll(g.repoPath); err != nil {
+		return fmt.Errorf("failed to remove existing directory: %w", err)
+	}
+
+	// Create parent directory
+	parentDir := filepath.Dir(g.repoPath)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory: %w", err)
+	}
+
+	// Clone the repository
+	cmd := exec.Command("git", "clone", url, g.repoPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git clone failed: %w\nOutput: %s", err, string(output))
+	}
+
+	// Set up upstream tracking for main branch
+	cmd = exec.Command("git", "branch", "--set-upstream-to=origin/main", "main")
+	cmd.Dir = g.repoPath
+	_, err = cmd.CombinedOutput()
+	if err != nil {
+		// If main doesn't exist, try master
+		cmd = exec.Command("git", "branch", "--set-upstream-to=origin/master", "master")
+		cmd.Dir = g.repoPath
+		_, err = cmd.CombinedOutput()
+		if err != nil {
+			// If that also fails, try to set upstream for current branch
+			cmd = exec.Command("git", "branch", "--set-upstream-to=origin/HEAD")
+			cmd.Dir = g.repoPath
+			_, _ = cmd.CombinedOutput() // Ignore error as this is best effort
+		}
+	}
+
+	return nil
+}
