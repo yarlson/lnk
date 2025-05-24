@@ -230,6 +230,116 @@ func (suite *LnkIntegrationTestSuite) TestInitWithRemote() {
 	suite.Equal(remoteURL, strings.TrimSpace(string(output)))
 }
 
+func (suite *LnkIntegrationTestSuite) TestInitIdempotent() {
+	// Test that running init multiple times is safe
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+
+	// Add a file to the repo to ensure it's not lost
+	testFile := filepath.Join(lnkDir, "test.txt")
+	err = os.WriteFile(testFile, []byte("test content"), 0644)
+	suite.Require().NoError(err)
+
+	// Run init again - should be idempotent
+	err = suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// File should still exist
+	suite.FileExists(testFile)
+	content, err := os.ReadFile(testFile)
+	suite.Require().NoError(err)
+	suite.Equal("test content", string(content))
+}
+
+func (suite *LnkIntegrationTestSuite) TestInitWithExistingRemote() {
+	// Test init with remote when remote already exists (same URL)
+	remoteURL := "https://github.com/user/dotfiles.git"
+
+	// First init with remote
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+	err = suite.lnk.AddRemote("origin", remoteURL)
+	suite.Require().NoError(err)
+
+	// Init again with same remote should be idempotent
+	err = suite.lnk.Init()
+	suite.Require().NoError(err)
+	err = suite.lnk.AddRemote("origin", remoteURL)
+	suite.Require().NoError(err)
+
+	// Verify remote is still correct
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	cmd := exec.Command("git", "remote", "get-url", "origin")
+	cmd.Dir = lnkDir
+	output, err := cmd.Output()
+	suite.Require().NoError(err)
+	suite.Equal(remoteURL, strings.TrimSpace(string(output)))
+}
+
+func (suite *LnkIntegrationTestSuite) TestInitWithDifferentRemote() {
+	// Test init with different remote when remote already exists
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add first remote
+	err = suite.lnk.AddRemote("origin", "https://github.com/user/dotfiles.git")
+	suite.Require().NoError(err)
+
+	// Try to add different remote - should error
+	err = suite.lnk.AddRemote("origin", "https://github.com/user/other-repo.git")
+	suite.Error(err)
+	suite.Contains(err.Error(), "already exists with different URL")
+}
+
+func (suite *LnkIntegrationTestSuite) TestInitWithNonLnkRepo() {
+	// Test init when directory contains a non-lnk Git repository
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	err := os.MkdirAll(lnkDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create a non-lnk git repo in the lnk directory
+	cmd := exec.Command("git", "init")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Add some content to make it look like a real repo
+	testFile := filepath.Join(lnkDir, "important-file.txt")
+	err = os.WriteFile(testFile, []byte("important data"), 0644)
+	suite.Require().NoError(err)
+
+	// Configure git and commit
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "add", "important-file.txt")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "commit", "-m", "important commit")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Now try to init lnk - should error to protect existing repo
+	err = suite.lnk.Init()
+	suite.Error(err)
+	suite.Contains(err.Error(), "appears to contain an existing Git repository")
+
+	// Verify the original file is still there
+	suite.FileExists(testFile)
+}
+
 func TestLnkIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(LnkIntegrationTestSuite))
 }

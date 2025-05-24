@@ -44,6 +44,11 @@ lnk init
 
 This creates `$XDG_CONFIG_HOME/lnk` (or `~/.config/lnk`) and initializes a Git repository with `main` as the default branch.
 
+**Safety Features:**
+- **Idempotent**: Running `lnk init` multiple times is safe and won't break existing repositories
+- **Repository Protection**: Won't overwrite existing non-lnk Git repositories (exits with error)
+- **Fresh Repository Detection**: Automatically detects if a directory contains an existing repository
+
 ### Initialize with remote
 
 ```bash
@@ -53,6 +58,11 @@ lnk init -r git@github.com:user/dotfiles.git
 ```
 
 This initializes the repository with `main` as the default branch and adds the specified URL as the `origin` remote, allowing you to sync your dotfiles with a Git hosting service.
+
+**Remote Handling:**
+- **Idempotent**: Adding the same remote URL multiple times is safe (no-op)
+- **Conflict Detection**: Adding different remote URLs fails with clear error message
+- **Existing Remote Support**: Works safely with repositories that already have remotes configured
 
 ### Add a file
 
@@ -87,6 +97,12 @@ lnk init
 # Initialize with remote for syncing with GitHub
 lnk init --remote https://github.com/user/dotfiles.git
 
+# Running init again is safe (idempotent)
+lnk init  # No error, no changes
+
+# Adding same remote again is safe
+lnk init -r https://github.com/user/dotfiles.git  # No error, no changes
+
 # Add some dotfiles
 lnk add ~/.bashrc
 lnk add ~/.vimrc
@@ -103,11 +119,27 @@ git log --oneline
 git push origin main
 ```
 
+### Safety Examples
+
+```bash
+# Attempting to init over existing non-lnk repository
+mkdir ~/.config/lnk && cd ~/.config/lnk
+git init && echo "important" > file.txt && git add . && git commit -m "important data"
+cd ~
+lnk init  # ERROR: Won't overwrite existing repository
+
+# Attempting to add conflicting remote
+lnk init -r https://github.com/user/repo1.git
+lnk init -r https://github.com/user/repo2.git  # ERROR: Different URL conflict
+```
+
 ## Error Handling
 
 - Adding a nonexistent file: exits with error
 - Adding a directory: exits with "directories are not supported"
 - Removing a non-symlink: exits with "file is not managed by lnk"
+- **Repository conflicts**: `lnk init` protects existing non-lnk repositories from accidental overwrite
+- **Remote conflicts**: Adding different remote URLs to existing remotes fails with descriptive error
 - Git operations show stderr output on failure
 
 ## Development

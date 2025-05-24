@@ -26,13 +26,13 @@ func (g *Git) Init() error {
 	cmd := exec.Command("git", "init", "-b", "main")
 	cmd.Dir = g.repoPath
 
-	output, err := cmd.CombinedOutput()
+	_, err := cmd.CombinedOutput()
 	if err != nil {
 		// Fallback to regular init + branch rename for older Git versions
 		cmd = exec.Command("git", "init")
 		cmd.Dir = g.repoPath
 
-		output, err = cmd.CombinedOutput()
+		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("git init failed: %w\nOutput: %s", err, string(output))
 		}
@@ -51,6 +51,19 @@ func (g *Git) Init() error {
 
 // AddRemote adds a remote to the repository
 func (g *Git) AddRemote(name, url string) error {
+	// Check if remote already exists
+	existingURL, err := g.getRemoteURL(name)
+	if err == nil {
+		// Remote exists, check if URL matches
+		if existingURL == url {
+			// Same URL, idempotent - do nothing
+			return nil
+		}
+		// Different URL, error
+		return fmt.Errorf("remote %s already exists with different URL: %s (trying to add: %s)", name, existingURL, url)
+	}
+
+	// Remote doesn't exist, add it
 	cmd := exec.Command("git", "remote", "add", name, url)
 	cmd.Dir = g.repoPath
 
@@ -60,6 +73,58 @@ func (g *Git) AddRemote(name, url string) error {
 	}
 
 	return nil
+}
+
+// getRemoteURL returns the URL for a remote, or error if not found
+func (g *Git) getRemoteURL(name string) (string, error) {
+	cmd := exec.Command("git", "remote", "get-url", name)
+	cmd.Dir = g.repoPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
+// IsGitRepository checks if the directory contains a Git repository
+func (g *Git) IsGitRepository() bool {
+	gitDir := filepath.Join(g.repoPath, ".git")
+	_, err := os.Stat(gitDir)
+	return err == nil
+}
+
+// IsLnkRepository checks if the repository appears to be managed by lnk
+func (g *Git) IsLnkRepository() bool {
+	if !g.IsGitRepository() {
+		return false
+	}
+
+	// Check if this looks like a lnk repository
+	// We consider it a lnk repo if:
+	// 1. It has no commits (fresh repo), OR
+	// 2. All commits start with "lnk:" pattern
+
+	commits, err := g.GetCommits()
+	if err != nil {
+		return false
+	}
+
+	// If no commits, it's a fresh repo - could be lnk
+	if len(commits) == 0 {
+		return true
+	}
+
+	// If all commits start with "lnk:", it's definitely ours
+	// If ANY commit doesn't start with "lnk:", it's probably not ours
+	for _, commit := range commits {
+		if !strings.HasPrefix(commit, "lnk:") {
+			return false
+		}
+	}
+
+	return true
 }
 
 // AddAndCommit stages a file and commits it
@@ -176,10 +241,11 @@ func (g *Git) GetCommits() ([]string, error) {
 	cmd := exec.Command("git", "log", "--oneline", "--format=%s")
 	cmd.Dir = g.repoPath
 
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// If there are no commits yet, return empty slice
-		if strings.Contains(string(output), "does not have any commits yet") {
+		outputStr := string(output)
+		if strings.Contains(outputStr, "does not have any commits yet") {
 			return []string{}, nil
 		}
 		return nil, fmt.Errorf("git log failed: %w", err)

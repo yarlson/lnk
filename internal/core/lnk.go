@@ -48,7 +48,19 @@ func (l *Lnk) Init() error {
 		return fmt.Errorf("failed to create lnk directory: %w", err)
 	}
 
-	// Initialize Git repository
+	// Check if there's already a Git repository
+	if l.git.IsGitRepository() {
+		// Repository exists, check if it's a lnk repository
+		if l.git.IsLnkRepository() {
+			// It's a lnk repository, init is idempotent - do nothing
+			return nil
+		} else {
+			// It's not a lnk repository, error to prevent data loss
+			return fmt.Errorf("directory %s appears to contain an existing Git repository that is not managed by lnk. Please backup or move the existing repository before initializing lnk", l.repoPath)
+		}
+	}
+
+	// No existing repository, initialize Git repository
 	if err := l.git.Init(); err != nil {
 		return fmt.Errorf("failed to initialize git repository: %w", err)
 	}
