@@ -17,6 +17,9 @@ REPO="yarlson/lnk"
 INSTALL_DIR="/usr/local/bin"
 BINARY_NAME="lnk"
 
+# Fallback version if redirect fails
+FALLBACK_VERSION="v0.0.2"
+
 # Detect OS and architecture
 detect_platform() {
     local os arch
@@ -45,11 +48,44 @@ detect_platform() {
     echo "${os}_${arch}"
 }
 
-# Get the latest release version
+# Get latest version by following redirect
 get_latest_version() {
-    curl -s "https://api.github.com/repos/${REPO}/releases/latest" | \
-        grep '"tag_name":' | \
-        sed -E 's/.*"([^"]+)".*/\1/'
+    echo -e "${BLUE}Getting latest release version...${NC}" >&2
+    
+    # Get redirect location from releases/latest
+    local redirect_url
+    redirect_url=$(curl -s -I "https://github.com/${REPO}/releases/latest" | grep -i "^location:" | sed 's/\r$//' | cut -d' ' -f2-)
+    
+    if [ -z "$redirect_url" ]; then
+        echo -e "${YELLOW}⚠ Could not get redirect URL, using fallback version ${FALLBACK_VERSION}${NC}" >&2
+        echo "$FALLBACK_VERSION"
+        return 0
+    fi
+    
+    # Extract version from redirect URL (format: https://github.com/user/repo/releases/tag/v1.2.3)
+    local version
+    version=$(echo "$redirect_url" | sed -E 's|.*/releases/tag/([^/]*)\s*$|\1|')
+    
+    if [ -z "$version" ] || [ "$version" = "$redirect_url" ]; then
+        echo -e "${YELLOW}⚠ Could not parse version from redirect URL: $redirect_url${NC}" >&2
+        echo -e "${YELLOW}Using fallback version ${FALLBACK_VERSION}${NC}" >&2
+        echo "$FALLBACK_VERSION"
+        return 0
+    fi
+    
+    echo "$version"
+}
+
+# Get version to install
+get_version() {
+    # Allow override via environment variable
+    if [ -n "$LNK_VERSION" ]; then
+        echo "$LNK_VERSION"
+    elif [ -n "$1" ]; then
+        echo "$1"
+    else
+        get_latest_version
+    fi
 }
 
 # Download and install
@@ -59,14 +95,9 @@ install_lnk() {
     echo -e "${BLUE}🔗 Installing lnk...${NC}"
     
     platform=$(detect_platform)
-    version=$(get_latest_version)
+    version=$(get_version "$1")
     
-    if [ -z "$version" ]; then
-        echo -e "${RED}Error: Failed to get latest version${NC}"
-        exit 1
-    fi
-    
-    echo -e "${BLUE}Latest version: ${version}${NC}"
+    echo -e "${BLUE}Version: ${version}${NC}"
     echo -e "${BLUE}Platform: ${platform}${NC}"
     
     # Download URL
@@ -82,6 +113,16 @@ install_lnk() {
     # Download the binary
     if ! curl -sL "$url" -o "$filename"; then
         echo -e "${RED}Error: Failed to download ${url}${NC}"
+        echo -e "${YELLOW}Please check if the release exists at: https://github.com/${REPO}/releases/tag/${version}${NC}"
+        echo -e "${YELLOW}Available releases: https://github.com/${REPO}/releases${NC}"
+        exit 1
+    fi
+    
+    # Check if we got an HTML error page instead of the binary
+    if file "$filename" 2>/dev/null | grep -q "HTML"; then
+        echo -e "${RED}Error: Downloaded file appears to be an HTML page (404 error)${NC}"
+        echo -e "${YELLOW}The release ${version} might not exist.${NC}"
+        echo -e "${YELLOW}Available releases: https://github.com/${REPO}/releases${NC}"
         exit 1
     fi
     
@@ -107,20 +148,33 @@ install_lnk() {
     
     echo -e "${GREEN}✅ lnk installed successfully!${NC}"
     echo -e "${GREEN}Run 'lnk --help' to get started.${NC}"
+    
+    # Test the installation
+    if command -v lnk >/dev/null 2>&1; then
+        echo -e "${GREEN}Installed version: $(lnk --version)${NC}"
+    fi
 }
 
 # Check if running with --help
 if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "Lnk installer script"
     echo ""
-    echo "Usage: curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash"
+    echo "Usage:"
+    echo "  curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash"
+    echo "  curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash -s v0.0.1"
+    echo "  LNK_VERSION=v0.0.1 curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash"
     echo ""
     echo "This script will:"
     echo "  1. Detect your OS and architecture"
-    echo "  2. Download the latest lnk release"
-    echo "  3. Install it to /usr/local/bin (requires sudo)"
+    echo "  2. Auto-detect the latest release by following GitHub redirects"
+    echo "  3. Download and install to /usr/local/bin (requires sudo)"
+    echo ""
+    echo "Environment variables:"
+    echo "  LNK_VERSION - Specify version to install (e.g., v0.0.1)"
+    echo ""
+    echo "Manual installation: https://github.com/yarlson/lnk/releases"
     exit 0
 fi
 
 # Run the installer
-install_lnk 
+install_lnk "$1" 

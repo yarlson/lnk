@@ -64,11 +64,13 @@ git push origin v1.0.0
 ## What GoReleaser Does
 
 1. **Builds binaries** for multiple platforms:
+
    - Linux (amd64, arm64)
    - macOS (amd64, arm64)
    - Windows (amd64)
 
 2. **Creates archives** with consistent naming:
+
    - `lnk_Linux_x86_64.tar.gz`
    - `lnk_Darwin_arm64.tar.gz`
    - etc.
@@ -76,6 +78,7 @@ git push origin v1.0.0
 3. **Generates checksums** for verification
 
 4. **Creates GitHub release** with:
+
    - Automatic changelog from conventional commits
    - Installation instructions
    - Download links for all platforms
@@ -112,17 +115,20 @@ ls -la dist/
 After a release is published, users can install lnk using multiple methods:
 
 ### 1. Shell Script (Recommended)
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash
 ```
 
 ### 2. Homebrew (macOS/Linux)
+
 ```bash
 brew tap yarlson/lnk
 brew install lnk
 ```
 
 ### 3. Manual Download
+
 ```bash
 # Download from GitHub releases
 wget https://github.com/yarlson/lnk/releases/latest/download/lnk_Linux_x86_64.tar.gz
@@ -181,4 +187,4 @@ The Homebrew formula is automatically maintained in the [homebrew-lnk](https://g
 1. Check that the GITHUB_TOKEN has access to the homebrew-lnk repository
 2. Verify the repository name and owner in `.goreleaser.yml`
 3. Check the release workflow logs for Homebrew-related errors
-4. Ensure the homebrew-lnk repository exists and is accessible 
+4. Ensure the homebrew-lnk repository exists and is accessible
