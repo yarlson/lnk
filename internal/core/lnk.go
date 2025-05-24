@@ -89,15 +89,15 @@ func (l *Lnk) Add(filePath string) error {
 	// Create symlink
 	if err := l.fs.CreateSymlink(destPath, absPath); err != nil {
 		// Try to restore the file if symlink creation fails
-		l.fs.MoveFile(destPath, absPath)
+		_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
 		return fmt.Errorf("failed to create symlink: %w", err)
 	}
 
 	// Stage and commit the file
 	if err := l.git.AddAndCommit(basename, fmt.Sprintf("lnk: added %s", basename)); err != nil {
 		// Try to restore the original state if commit fails
-		os.Remove(absPath)
-		l.fs.MoveFile(destPath, absPath)
+		_ = os.Remove(absPath)               // Ignore error in cleanup
+		_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
@@ -143,8 +143,8 @@ func (l *Lnk) Remove(filePath string) error {
 	// Remove from Git and commit
 	if err := l.git.RemoveAndCommit(basename, fmt.Sprintf("lnk: removed %s", basename)); err != nil {
 		// Try to restore the symlink if commit fails
-		l.fs.MoveFile(absPath, target)
-		l.fs.CreateSymlink(target, absPath)
+		_ = l.fs.MoveFile(absPath, target)      // Ignore error in cleanup
+		_ = l.fs.CreateSymlink(target, absPath) // Ignore error in cleanup
 		return fmt.Errorf("failed to commit changes: %w", err)
 	}
 
