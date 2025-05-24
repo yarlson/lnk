@@ -60,19 +60,19 @@ build:
 ## test: Run tests
 test:
 	@echo "$(BLUE)Running tests...$(NC)"
-	@go test ./test
+	@go test ./
 	@echo "$(GREEN)✓ Tests passed$(NC)"
 
 ## test-v: Run tests with verbose output
 test-v:
 	@echo "$(BLUE)Running tests (verbose)...$(NC)"
-	@go test -v ./test
+	@go test -v ./
 
 ## test-cover: Run tests with coverage
 test-cover:
 	@echo "$(BLUE)Running tests with coverage...$(NC)"
-	@go test -v -cover ./test
-	@go test -coverprofile=coverage.out ./test
+	@go test -v -cover ./
+	@go test -coverprofile=coverage.out ./
 	@go tool cover -html=coverage.out -o coverage.html
 	@echo "$(GREEN)✓ Coverage report generated: coverage.html$(NC)"
 
