@@ -1,11 +1,11 @@
 # Lnk
 
-**The dotfiles manager that gets out of your way.**
+**The missing middle: Safer than simple, simpler than complex.**
 
-Symlink your dotfiles, commit with Git, sync anywhere. Zero config, zero bloat, zero surprises.
+Git-native dotfiles management that won't break your setup. Zero config, zero bloat, zero surprises.
 
 ```bash
-# One command to rule them all
+# The power of Git, the safety of proper engineering
 lnk init && lnk add ~/.vimrc && git push
 ```
 
@@ -13,14 +13,18 @@ lnk init && lnk add ~/.vimrc && git push
 
 ## Why Lnk?
 
-**For engineers who want dotfiles management without the ceremony.**
+**The dotfiles manager that fills the missing gap.**
 
-- ✅ **Actually simple**: 3 commands total (`init`, `add`, `rm`)
-- ✅ **Git-native**: No abstractions, just commits with clear messages
-- ✅ **Bulletproof**: Comprehensive edge case handling, won't destroy your setup
-- ✅ **Portable**: Relative symlinks work across machines
-- ✅ **Standards-compliant**: Respects XDG Base Directory spec
-- ✅ **Zero dependencies**: Single binary, no runtime requirements
+While chezmoi offers 100+ features and Home Manager requires learning Nix, **Lnk focuses on doing the essentials perfectly**:
+
+- 🎯 **Safe simplicity**: More robust than Dotbot, simpler than chezmoi
+- 🛡️ **Bulletproof operations**: Comprehensive edge case handling (unlike minimal tools)
+- ⚡ **Zero friction**: No YAML configs, no templates, no learning curve
+- 🔧 **Git-native**: Clean commits, standard workflow, no abstractions
+- 📦 **Zero dependencies**: Single binary vs Python/Node/Ruby runtimes
+- 🚀 **Production ready**: 12 integration tests, proper error handling
+
+**The market gap**: Tools are either too simple (and unsafe) or too complex (and overwhelming). Lnk is the **Goldilocks solution** – just right for developers who want reliability without complexity.
 
 ## Quick Start
 
@@ -198,6 +202,22 @@ internal/
 - **Relative symlinks** for cross-platform compatibility
 - **XDG compliance** with fallback to `~/.config`
 
+### Feature Positioning
+
+| Feature | Lnk | Dotbot | yadm | chezmoi | Home Manager |
+|---------|-----|--------|------|---------|--------------|
+| **Simplicity** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Safety/Edge Cases** | ✅ | ❌ | ⚠️ | ✅ | ✅ |
+| **Git Integration** | ✅ | ❌ | ✅ | ⚠️ | ❌ |
+| **Zero Dependencies** | ✅ | ❌ | ❌ | ✅ | ❌ |
+| **Cross-Platform** | ✅ | ✅ | ⚠️ | ✅ | ⚠️ |
+| **Learning Curve** | Minutes | Minutes | Hours | Days | Weeks |
+| **File Templating** | ❌ | ❌ | Basic | Advanced | Advanced |
+| **Built-in Encryption** | ❌ | ❌ | ✅ | ✅ | Plugin |
+| **Package Management** | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+**Lnk's niche**: Maximum safety and Git integration with minimum complexity.
+
 ### Performance
 
 - **Single binary**: ~8MB, starts in <10ms
@@ -207,16 +227,56 @@ internal/
 ## FAQ
 
 <details>
-<summary><strong>How is this different from GNU Stow/Chezmoi/Dotbot?</strong></summary>
+<summary><strong>How is this different from other dotfiles managers?</strong></summary>
 
-| Tool | Approach | Complexity | Git Integration |
-|------|----------|------------|-----------------|
-| **Lnk** | Simple symlinks | Minimal | Native |
-| Stow | Directory trees | Medium | Manual |
-| Chezmoi | Templates + state | High | Abstracted |
-| Dotbot | YAML config | Medium | Manual |
+| Tool | Stars | Approach | Complexity | Learning Curve | Git Integration | Cross-Platform | Key Strength |
+|------|-------|----------|------------|----------------|-----------------|----------------|--------------|
+| **Lnk** | - | Simple symlinks + safety | **Minimal** | **Minutes** | **Native** | ✅ | **Safe simplicity** |
+| chezmoi | 15k | Templates + encryption | High | Hours/Days | Abstracted | ✅ | Feature completeness |
+| Mackup | 14.9k | App config sync | Medium | Hours | Manual | macOS/Linux | GUI app settings |
+| Home Manager | 8.1k | Declarative Nix | **Very High** | **Weeks** | Manual | Linux/macOS | Package + config unity |
+| Dotbot | 7.4k | YAML symlinks | Low | Minutes | Manual | ✅ | Pure simplicity |
+| yadm | 5.7k | Git wrapper | Medium | Hours | **Native** | Unix-like | Git-centric power |
 
-**Lnk is for developers who want Git-native dotfiles without configuration overhead.**
+**Lnk fills the "safe simplicity" gap** – easier than chezmoi/yadm, safer than Dotbot, more capable than plain Git.
+
+</details>
+
+<details>
+<summary><strong>Why choose Lnk over the alternatives?</strong></summary>
+
+**Choose Lnk if you want:**
+- ✅ **Safety first**: Bulletproof edge case handling, won't break existing setups
+- ✅ **Git-native workflow**: No abstractions, just clean commits with clear messages  
+- ✅ **Zero learning curve**: 3 commands, works like Git, no configuration files
+- ✅ **Zero dependencies**: Single binary, no Python/Node/Ruby runtime requirements
+- ✅ **Production ready**: Comprehensive test suite, proper error handling
+
+**Choose others if you need:**
+- **chezmoi**: Heavy templating, password manager integration, Windows-first
+- **Mackup**: GUI app settings sync via Dropbox/iCloud (macOS focus)
+- **Home Manager**: Nix ecosystem, package management, declarative everything
+- **Dotbot**: Ultra-minimal YAML configuration (no safety features)
+- **yadm**: Git power user features, encryption, bare repo workflow
+
+**The sweet spot**: Lnk is for developers who want dotfiles management **without the ceremony** – all the safety and Git integration you need, none of the complexity you don't.
+
+</details>
+
+<details>
+<summary><strong>When NOT to use Lnk?</strong></summary>
+
+**Lnk might not be for you if you need:**
+
+❌ **File templating**: Different configs per machine → use **chezmoi**  
+❌ **Built-in encryption**: Secrets in dotfiles → use **chezmoi** or **yadm**  
+❌ **GUI app settings**: Mac app preferences → use **Mackup**  
+❌ **Package management**: Installing software → use **Home Manager** (Nix)  
+❌ **Complex workflows**: Multi-step bootstrapping → use **chezmoi** or custom scripts  
+❌ **Windows-first**: Native Windows support → use **chezmoi**  
+
+**Lnk's philosophy**: Do one thing (symlink management) extremely well, let other tools handle their specialties. You can always combine Lnk with other tools as needed.
+
 </details>
 
 <details>
