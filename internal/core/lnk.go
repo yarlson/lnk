@@ -69,9 +69,6 @@ func getRelativePath(absPath string) (string, error) {
 	if strings.HasPrefix(relPath, "..") {
 		// Use absolute path but remove leading slash and drive letter (for cross-platform)
 		cleanPath := strings.TrimPrefix(absPath, "/")
-		if len(cleanPath) > 1 && cleanPath[1] == ':' {
-			// Windows drive letter, keep as is
-		}
 		return cleanPath, nil
 	}
 
