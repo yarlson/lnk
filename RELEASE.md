@@ -8,6 +8,7 @@ This document describes how to create releases for the lnk project using GoRelea
 - Git tags pushed to GitHub trigger releases automatically
 - GoReleaser is configured in `.goreleaser.yml`
 - GitHub Actions will handle the release process
+- Access to the [homebrew-lnk](https://github.com/yarlson/homebrew-lnk) tap repository
 
 ## Creating a Release
 
@@ -39,6 +40,7 @@ git push origin v1.0.0
 - GitHub Actions will automatically build and release when the tag is pushed
 - Check the [Actions tab](https://github.com/yarlson/lnk/actions) for build status
 - The release will appear in [GitHub Releases](https://github.com/yarlson/lnk/releases)
+- The Homebrew formula will be automatically updated in [homebrew-lnk](https://github.com/yarlson/homebrew-lnk)
 
 ## What GoReleaser Does
 
@@ -58,6 +60,8 @@ git push origin v1.0.0
    - Automatic changelog from conventional commits
    - Installation instructions
    - Download links for all platforms
+
+5. **Updates Homebrew formula** automatically in the [homebrew-lnk](https://github.com/yarlson/homebrew-lnk) tap
 
 ## Manual Release (if needed)
 
@@ -84,6 +88,29 @@ ls -la dist/
 ./dist/lnk_<platform>/lnk --version
 ```
 
+## Installation Methods
+
+After a release is published, users can install lnk using multiple methods:
+
+### 1. Shell Script (Recommended)
+```bash
+curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash
+```
+
+### 2. Homebrew (macOS/Linux)
+```bash
+brew tap yarlson/lnk
+brew install lnk
+```
+
+### 3. Manual Download
+```bash
+# Download from GitHub releases
+wget https://github.com/yarlson/lnk/releases/latest/download/lnk_Linux_x86_64.tar.gz
+tar -xzf lnk_Linux_x86_64.tar.gz
+sudo mv lnk /usr/local/bin/
+```
+
 ## Version Numbering
 
 We use [Semantic Versioning](https://semver.org/):
@@ -102,13 +129,13 @@ GoReleaser automatically generates changelogs from git commits using conventiona
 - `test:` - Test changes (excluded from changelog)
 - `ci:` - CI changes (excluded from changelog)
 
-## Installation Script
+## Homebrew Tap
 
-The `install.sh` script automatically downloads the latest release:
+The Homebrew formula is automatically maintained in the [homebrew-lnk](https://github.com/yarlson/homebrew-lnk) repository. When a new release is created:
 
-```bash
-curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash
-```
+1. GoReleaser automatically creates/updates the formula
+2. The formula is committed to the tap repository
+3. Users can immediately install the new version via `brew install yarlson/lnk/lnk`
 
 ## Troubleshooting
 
@@ -128,4 +155,11 @@ curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash
 
 1. Ensure commits follow conventional commit format
 2. Check that there are commits since the last tag
-3. Verify changelog configuration in `.goreleaser.yml` 
+3. Verify changelog configuration in `.goreleaser.yml`
+
+### Homebrew formula not updated
+
+1. Check that the GITHUB_TOKEN has access to the homebrew-lnk repository
+2. Verify the repository name and owner in `.goreleaser.yml`
+3. Check the release workflow logs for Homebrew-related errors
+4. Ensure the homebrew-lnk repository exists and is accessible 

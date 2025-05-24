@@ -13,10 +13,14 @@ lnk push "setup"
 ## Install
 
 ```bash
-# Quick
+# Quick install (recommended)
 curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash
 
-# Manual
+# Homebrew (macOS/Linux)
+brew tap yarlson/lnk
+brew install lnk
+
+# Manual download
 wget https://github.com/yarlson/lnk/releases/latest/download/lnk-$(uname -s | tr '[:upper:]' '[:lower:]')-amd64
 chmod +x lnk-* && sudo mv lnk-* /usr/local/bin/lnk
 

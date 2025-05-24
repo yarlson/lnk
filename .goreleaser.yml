@@ -98,22 +98,35 @@ release:
     wget https://github.com/yarlson/lnk/releases/download/{{.Tag}}/lnk_{{.Os}}_{{.Arch}}.tar.gz
     tar -xzf lnk_{{.Os}}_{{.Arch}}.tar.gz
     sudo mv lnk /usr/local/bin/
+    
+    # Homebrew
+    brew tap yarlson/lnk
+    brew install lnk
     ```
     
   footer: |
     ---
     **Full Changelog**: https://github.com/yarlson/lnk/compare/{{.PreviousTag}}...{{.Tag}}
 
-# Homebrew tap (optional - you can enable this later)
-# brews:
-#   - repository:
-#       owner: yarlson
-#       name: homebrew-tap
-#     homepage: "https://github.com/yarlson/lnk"
-#     description: "Git-native dotfiles management"
-#     license: "MIT"
-#     test: |
-#       system "#{bin}/lnk --version"
+# Homebrew tap
+brews:
+  - repository:
+      owner: yarlson
+      name: homebrew-lnk
+      branch: main
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    homepage: "https://github.com/yarlson/lnk"
+    description: "Git-native dotfiles management that doesn't suck"
+    license: "MIT"
+    skip_upload: auto
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+    test: |
+      system "#{bin}/lnk --version"
+    install: |
+      bin.install "lnk"
 
 # Docker images (optional)
 # dockers:
