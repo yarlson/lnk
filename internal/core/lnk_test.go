@@ -1,4 +1,4 @@
-package test
+package core
 
 import (
 	"os"
@@ -7,14 +7,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-	"github.com/yarlson/lnk/internal/core"
 )
 
 type CoreTestSuite struct {
 	suite.Suite
 	tempDir     string
 	originalDir string
-	lnk         *core.Lnk
+	lnk         *Lnk
 }
 
 func (suite *CoreTestSuite) SetupTest() {
@@ -35,7 +34,7 @@ func (suite *CoreTestSuite) SetupTest() {
 	suite.T().Setenv("XDG_CONFIG_HOME", tempDir)
 
 	// Initialize Lnk instance
-	suite.lnk = core.NewLnk()
+	suite.lnk = NewLnk()
 }
 
 func (suite *CoreTestSuite) TearDownTest() {
@@ -206,7 +205,7 @@ func (suite *CoreTestSuite) TestXDGConfigHomeFallback() {
 	suite.Require().NoError(err)
 	suite.T().Setenv("HOME", homeDir)
 
-	lnk := core.NewLnk()
+	lnk := NewLnk()
 	err = lnk.Init()
 	suite.Require().NoError(err)
 

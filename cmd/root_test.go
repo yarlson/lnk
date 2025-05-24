@@ -1,4 +1,4 @@
-package test
+package cmd
 
 import (
 	"bytes"
@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-	"github.com/yarlson/lnk/cmd"
 )
 
 type CLITestSuite struct {
@@ -47,7 +46,7 @@ func (suite *CLITestSuite) TearDownTest() {
 }
 
 func (suite *CLITestSuite) runCommand(args ...string) error {
-	rootCmd := cmd.NewRootCommand()
+	rootCmd := NewRootCommand()
 	rootCmd.SetOut(suite.stdout)
 	rootCmd.SetErr(suite.stderr)
 	rootCmd.SetArgs(args)
