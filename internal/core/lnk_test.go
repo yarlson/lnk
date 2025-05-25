@@ -480,6 +480,42 @@ func (suite *CoreTestSuite) TestSameBasenameSequentialAdd() {
 	suite.Require().NoError(err, "Second .bashrc should be removable")
 }
 
+// Test dirty repository status detection
+func (suite *CoreTestSuite) TestStatusDetectsDirtyRepo() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add and commit a file
+	testFile := filepath.Join(suite.tempDir, "a")
+	err = os.WriteFile(testFile, []byte("abc"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Add a remote so status works
+	err = suite.lnk.AddRemote("origin", "https://github.com/test/dotfiles.git")
+	suite.Require().NoError(err)
+
+	// Check status - should be clean but ahead of remote
+	status, err := suite.lnk.Status()
+	suite.Require().NoError(err)
+	suite.Equal(1, status.Ahead)
+	suite.Equal(0, status.Behind)
+	suite.False(status.Dirty, "Repository should not be dirty after commit")
+
+	// Now edit the managed file (simulating the issue scenario)
+	err = os.WriteFile(testFile, []byte("def"), 0644)
+	suite.Require().NoError(err)
+
+	// Check status again - should detect dirty state
+	status, err = suite.lnk.Status()
+	suite.Require().NoError(err)
+	suite.Equal(1, status.Ahead)
+	suite.Equal(0, status.Behind)
+	suite.True(status.Dirty, "Repository should be dirty after editing managed file")
+}
+
 func TestCoreSuite(t *testing.T) {
 	suite.Run(t, new(CoreTestSuite))
 }

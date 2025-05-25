@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -422,6 +423,49 @@ func (suite *CLITestSuite) TestSameBasenameFilesBug() {
 	restoredContentB, err := os.ReadFile(fileB)
 	suite.NoError(err)
 	suite.Equal(contentB, string(restoredContentB), "Restored second file should have original content")
+}
+
+func (suite *CLITestSuite) TestStatusDirtyRepo() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add and commit a file
+	testFile := filepath.Join(suite.tempDir, "a")
+	err = os.WriteFile(testFile, []byte("abc"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a remote so status works
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	cmd := exec.Command("git", "remote", "add", "origin", "https://github.com/test/dotfiles.git")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Status should show clean but ahead
+	err = suite.runCommand("status")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "1 commit ahead")
+	suite.NotContains(output, "uncommitted changes")
+	suite.stdout.Reset()
+
+	// Now edit the managed file (simulating the issue scenario)
+	err = os.WriteFile(testFile, []byte("def"), 0644)
+	suite.Require().NoError(err)
+
+	// Status should now detect dirty state and NOT say "up to date"
+	err = suite.runCommand("status")
+	suite.NoError(err)
+	output = suite.stdout.String()
+	suite.Contains(output, "Repository has uncommitted changes")
+	suite.NotContains(output, "Repository is up to date")
+	suite.Contains(output, "lnk push")
 }
 
 func TestCLISuite(t *testing.T) {

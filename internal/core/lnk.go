@@ -350,6 +350,7 @@ type StatusInfo struct {
 	Ahead  int
 	Behind int
 	Remote string
+	Dirty  bool
 }
 
 // Status returns the repository sync status
@@ -368,6 +369,7 @@ func (l *Lnk) Status() (*StatusInfo, error) {
 		Ahead:  gitStatus.Ahead,
 		Behind: gitStatus.Behind,
 		Remote: gitStatus.Remote,
+		Dirty:  gitStatus.Dirty,
 	}, nil
 }
 

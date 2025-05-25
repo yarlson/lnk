@@ -305,6 +305,7 @@ type StatusInfo struct {
 	Ahead  int
 	Behind int
 	Remote string
+	Dirty  bool
 }
 
 // GetStatus returns the repository status relative to remote
@@ -313,6 +314,12 @@ func (g *Git) GetStatus() (*StatusInfo, error) {
 	_, err := g.GetRemoteInfo()
 	if err != nil {
 		return nil, err
+	}
+
+	// Check for uncommitted changes
+	dirty, err := g.HasChanges()
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for uncommitted changes: %w", err)
 	}
 
 	// Get the remote tracking branch
@@ -327,6 +334,7 @@ func (g *Git) GetStatus() (*StatusInfo, error) {
 			Ahead:  g.getAheadCount(remoteBranch),
 			Behind: 0, // Can't be behind if no upstream
 			Remote: remoteBranch,
+			Dirty:  dirty,
 		}, nil
 	}
 
@@ -336,6 +344,7 @@ func (g *Git) GetStatus() (*StatusInfo, error) {
 		Ahead:  g.getAheadCount(remoteBranch),
 		Behind: g.getBehindCount(remoteBranch),
 		Remote: remoteBranch,
+		Dirty:  dirty,
 	}, nil
 }
 
