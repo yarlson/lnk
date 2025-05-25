@@ -115,10 +115,8 @@ lnk push "new plugins" # commit & push
 ## Technical bits
 
 - **Single binary** (~8MB, no deps)
-- **Atomic operations** (rollback on failure)
 - **Relative symlinks** (portable)
 - **XDG compliant** (`~/.config/lnk`)
-- **20 integration tests**
 
 ## Alternatives
 
