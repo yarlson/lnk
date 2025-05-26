@@ -528,6 +528,113 @@ func (suite *CLITestSuite) TestStatusDirtyRepo() {
 	suite.Contains(output, "lnk push")
 }
 
+func (suite *CLITestSuite) TestMultihostCommands() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create test files
+	testFile1 := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile1, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	testFile2 := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile2, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+
+	// Add file to common configuration
+	err = suite.runCommand("add", testFile1)
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Added .bashrc to lnk")
+	suite.NotContains(output, "host:")
+	suite.stdout.Reset()
+
+	// Add file to host-specific configuration
+	err = suite.runCommand("add", "--host", "workstation", testFile2)
+	suite.NoError(err)
+	output = suite.stdout.String()
+	suite.Contains(output, "Added .vimrc to lnk (host: workstation)")
+	suite.Contains(output, "workstation.lnk")
+	suite.stdout.Reset()
+
+	// Test list command - common only
+	err = suite.runCommand("list")
+	suite.NoError(err)
+	output = suite.stdout.String()
+	suite.Contains(output, "Files managed by lnk (common)")
+	suite.Contains(output, ".bashrc")
+	suite.NotContains(output, ".vimrc")
+	suite.stdout.Reset()
+
+	// Test list command - specific host
+	err = suite.runCommand("list", "--host", "workstation")
+	suite.NoError(err)
+	output = suite.stdout.String()
+	suite.Contains(output, "Files managed by lnk (host: workstation)")
+	suite.Contains(output, ".vimrc")
+	suite.NotContains(output, ".bashrc")
+	suite.stdout.Reset()
+
+	// Test list command - all configurations
+	err = suite.runCommand("list", "--all")
+	suite.NoError(err)
+	output = suite.stdout.String()
+	suite.Contains(output, "All configurations managed by lnk")
+	suite.Contains(output, "Common configuration")
+	suite.Contains(output, "Host: workstation")
+	suite.Contains(output, ".bashrc")
+	suite.Contains(output, ".vimrc")
+	suite.stdout.Reset()
+
+	// Test remove from host-specific
+	err = suite.runCommand("rm", "--host", "workstation", testFile2)
+	suite.NoError(err)
+	output = suite.stdout.String()
+	suite.Contains(output, "Removed .vimrc from lnk (host: workstation)")
+	suite.stdout.Reset()
+
+	// Test remove from common
+	err = suite.runCommand("rm", testFile1)
+	suite.NoError(err)
+	output = suite.stdout.String()
+	suite.Contains(output, "Removed .bashrc from lnk")
+	suite.NotContains(output, "host:")
+	suite.stdout.Reset()
+
+	// Verify files are restored
+	info1, err := os.Lstat(testFile1)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info1.Mode()&os.ModeSymlink)
+
+	info2, err := os.Lstat(testFile2)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info2.Mode()&os.ModeSymlink)
+}
+
+func (suite *CLITestSuite) TestMultihostErrorHandling() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Try to remove from non-existent host config
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("rm", "--host", "nonexistent", testFile)
+	suite.Error(err)
+	suite.Contains(err.Error(), "File is not managed by lnk")
+
+	// Try to list non-existent host config
+	err = suite.runCommand("list", "--host", "nonexistent")
+	suite.NoError(err) // Should not error, just show empty
+	output := suite.stdout.String()
+	suite.Contains(output, "No files currently managed by lnk (host: nonexistent)")
+}
+
 func TestCLISuite(t *testing.T) {
 	suite.Run(t, new(CLITestSuite))
 }

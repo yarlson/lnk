@@ -586,6 +586,185 @@ func (suite *CoreTestSuite) TestListManagedItems() {
 	suite.Contains(items[0], ".config")
 }
 
+// Test multihost functionality
+func (suite *CoreTestSuite) TestMultihostFileOperations() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create test files for different hosts
+	testFile1 := filepath.Join(suite.tempDir, ".bashrc")
+	content1 := "export PATH=$PATH:/usr/local/bin"
+	err = os.WriteFile(testFile1, []byte(content1), 0644)
+	suite.Require().NoError(err)
+
+	testFile2 := filepath.Join(suite.tempDir, ".vimrc")
+	content2 := "set number"
+	err = os.WriteFile(testFile2, []byte(content2), 0644)
+	suite.Require().NoError(err)
+
+	// Add file to common configuration
+	commonLnk := NewLnk()
+	err = commonLnk.Add(testFile1)
+	suite.Require().NoError(err)
+
+	// Add file to host-specific configuration
+	hostLnk := NewLnkWithHost("workstation")
+	err = hostLnk.Add(testFile2)
+	suite.Require().NoError(err)
+
+	// Verify both files are symlinks
+	info1, err := os.Lstat(testFile1)
+	suite.Require().NoError(err)
+	suite.Equal(os.ModeSymlink, info1.Mode()&os.ModeSymlink)
+
+	info2, err := os.Lstat(testFile2)
+	suite.Require().NoError(err)
+	suite.Equal(os.ModeSymlink, info2.Mode()&os.ModeSymlink)
+
+	// Verify common configuration tracking
+	commonItems, err := commonLnk.List()
+	suite.Require().NoError(err)
+	suite.Len(commonItems, 1)
+	suite.Contains(commonItems[0], ".bashrc")
+
+	// Verify host-specific configuration tracking
+	hostItems, err := hostLnk.List()
+	suite.Require().NoError(err)
+	suite.Len(hostItems, 1)
+	suite.Contains(hostItems[0], ".vimrc")
+
+	// Verify files are stored in correct locations
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+
+	// Common file should be in root
+	commonFile := filepath.Join(lnkDir, ".lnk")
+	suite.FileExists(commonFile)
+
+	// Host-specific file should be in host subdirectory
+	hostDir := filepath.Join(lnkDir, "workstation.lnk")
+	suite.DirExists(hostDir)
+
+	hostTrackingFile := filepath.Join(lnkDir, ".lnk.workstation")
+	suite.FileExists(hostTrackingFile)
+
+	// Test removal
+	err = commonLnk.Remove(testFile1)
+	suite.Require().NoError(err)
+
+	err = hostLnk.Remove(testFile2)
+	suite.Require().NoError(err)
+
+	// Verify files are restored
+	info1, err = os.Lstat(testFile1)
+	suite.Require().NoError(err)
+	suite.Equal(os.FileMode(0), info1.Mode()&os.ModeSymlink)
+
+	info2, err = os.Lstat(testFile2)
+	suite.Require().NoError(err)
+	suite.Equal(os.FileMode(0), info2.Mode()&os.ModeSymlink)
+}
+
+// Test hostname detection
+func (suite *CoreTestSuite) TestHostnameDetection() {
+	hostname, err := GetCurrentHostname()
+	suite.NoError(err)
+	suite.NotEmpty(hostname)
+}
+
+// Test host-specific symlink restoration
+func (suite *CoreTestSuite) TestMultihostSymlinkRestoration() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create files directly in host-specific storage (simulating a pull)
+	hostLnk := NewLnkWithHost("testhost")
+
+	// Ensure host storage directory exists
+	hostStoragePath := hostLnk.getHostStoragePath()
+	err = os.MkdirAll(hostStoragePath, 0755)
+	suite.Require().NoError(err)
+
+	// Create a file in host storage
+	repoFile := filepath.Join(hostStoragePath, ".bashrc")
+	content := "export HOST=testhost"
+	err = os.WriteFile(repoFile, []byte(content), 0644)
+	suite.Require().NoError(err)
+
+	// Create host tracking file
+	trackingFile := filepath.Join(suite.tempDir, "lnk", ".lnk.testhost")
+	err = os.WriteFile(trackingFile, []byte(".bashrc\n"), 0644)
+	suite.Require().NoError(err)
+
+	// Get home directory for the test
+	homeDir, err := os.UserHomeDir()
+	suite.Require().NoError(err)
+
+	targetFile := filepath.Join(homeDir, ".bashrc")
+
+	// Clean up the test file after the test
+	defer func() {
+		_ = os.Remove(targetFile)
+	}()
+
+	// Test symlink restoration
+	restored, err := hostLnk.RestoreSymlinks()
+	suite.Require().NoError(err)
+
+	// Should have restored the symlink
+	suite.Len(restored, 1)
+	suite.Equal(".bashrc", restored[0])
+
+	// Check that file is now a symlink
+	info, err := os.Lstat(targetFile)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+}
+
+// Test that common and host-specific configurations don't interfere
+func (suite *CoreTestSuite) TestMultihostIsolation() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create same file for common and host-specific
+	testFile := filepath.Join(suite.tempDir, ".gitconfig")
+	commonContent := "[user]\n\tname = Common User"
+	err = os.WriteFile(testFile, []byte(commonContent), 0644)
+	suite.Require().NoError(err)
+
+	// Add to common
+	commonLnk := NewLnk()
+	err = commonLnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Remove and recreate with different content
+	err = commonLnk.Remove(testFile)
+	suite.Require().NoError(err)
+
+	hostContent := "[user]\n\tname = Work User"
+	err = os.WriteFile(testFile, []byte(hostContent), 0644)
+	suite.Require().NoError(err)
+
+	// Add to host-specific
+	hostLnk := NewLnkWithHost("work")
+	err = hostLnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Verify tracking files are separate
+	commonItems, err := commonLnk.List()
+	suite.Require().NoError(err)
+	suite.Len(commonItems, 0) // Should be empty after removal
+
+	hostItems, err := hostLnk.List()
+	suite.Require().NoError(err)
+	suite.Len(hostItems, 1)
+	suite.Contains(hostItems[0], ".gitconfig")
+
+	// Verify content is correct
+	symlinkContent, err := os.ReadFile(testFile)
+	suite.Require().NoError(err)
+	suite.Equal(hostContent, string(symlinkContent))
+}
+
 func TestCoreSuite(t *testing.T) {
 	suite.Run(t, new(CoreTestSuite))
 }

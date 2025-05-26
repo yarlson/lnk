@@ -14,18 +14,40 @@ import (
 // Lnk represents the main application logic
 type Lnk struct {
 	repoPath string
+	host     string // Host-specific configuration
 	git      *git.Git
 	fs       *fs.FileSystem
 }
 
-// NewLnk creates a new Lnk instance
+// NewLnk creates a new Lnk instance for common configuration
 func NewLnk() *Lnk {
 	repoPath := getRepoPath()
 	return &Lnk{
 		repoPath: repoPath,
+		host:     "", // Empty host means common configuration
 		git:      git.New(repoPath),
 		fs:       fs.New(),
 	}
+}
+
+// NewLnkWithHost creates a new Lnk instance for host-specific configuration
+func NewLnkWithHost(host string) *Lnk {
+	repoPath := getRepoPath()
+	return &Lnk{
+		repoPath: repoPath,
+		host:     host,
+		git:      git.New(repoPath),
+		fs:       fs.New(),
+	}
+}
+
+// GetCurrentHostname returns the current system hostname
+func GetCurrentHostname() (string, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", fmt.Errorf("failed to get hostname: %w", err)
+	}
+	return hostname, nil
 }
 
 // getRepoPath returns the path to the lnk repository directory
@@ -43,12 +65,36 @@ func getRepoPath() string {
 	return filepath.Join(xdgConfig, "lnk")
 }
 
-// generateRepoName creates a unique repository filename from a relative path
-func generateRepoName(relativePath string) string {
-	// Replace slashes and backslashes with underscores to create valid filename
+// generateRepoName creates a repository path from a relative path
+func generateRepoName(relativePath string, host string) string {
+	if host != "" {
+		// For host-specific files, preserve the directory structure
+		return relativePath
+	}
+
+	// For common files, replace slashes and backslashes with underscores to create valid filename
 	repoName := strings.ReplaceAll(relativePath, "/", "_")
 	repoName = strings.ReplaceAll(repoName, "\\", "_")
+
 	return repoName
+}
+
+// getHostStoragePath returns the storage path for host-specific or common files
+func (l *Lnk) getHostStoragePath() string {
+	if l.host == "" {
+		// Common configuration - store in root of repo
+		return l.repoPath
+	}
+	// Host-specific configuration - store in host subdirectory
+	return filepath.Join(l.repoPath, l.host+".lnk")
+}
+
+// getLnkFileName returns the appropriate .lnk tracking file name
+func (l *Lnk) getLnkFileName() string {
+	if l.host == "" {
+		return ".lnk"
+	}
+	return ".lnk." + l.host
 }
 
 // getRelativePath converts an absolute path to a relative path from home directory
@@ -147,9 +193,16 @@ func (l *Lnk) Add(filePath string) error {
 		return fmt.Errorf("failed to get relative path: %w", err)
 	}
 
-	// Generate unique repository name from relative path
-	repoName := generateRepoName(relativePath)
-	destPath := filepath.Join(l.repoPath, repoName)
+	// Generate repository path from relative path
+	repoName := generateRepoName(relativePath, l.host)
+	storagePath := l.getHostStoragePath()
+	destPath := filepath.Join(storagePath, repoName)
+
+	// Ensure destination directory exists (including parent directories for host-specific files)
+	destDir := filepath.Dir(destPath)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
 
 	// Check if this relative path is already managed
 	managedItems, err := l.getManagedItems()
@@ -203,7 +256,12 @@ func (l *Lnk) Add(filePath string) error {
 	}
 
 	// Add both the item and .lnk file to git in a single commit
-	if err := l.git.Add(repoName); err != nil {
+	// For host-specific files, we need to add the relative path from repo root
+	gitPath := repoName
+	if l.host != "" {
+		gitPath = filepath.Join(l.host+".lnk", repoName)
+	}
+	if err := l.git.Add(gitPath); err != nil {
 		// Try to restore the original state if git add fails
 		_ = os.Remove(absPath)                // Ignore error in cleanup
 		_ = l.removeManagedItem(relativePath) // Ignore error in cleanup
@@ -216,7 +274,7 @@ func (l *Lnk) Add(filePath string) error {
 	}
 
 	// Add .lnk file to the same commit
-	if err := l.git.Add(".lnk"); err != nil {
+	if err := l.git.Add(l.getLnkFileName()); err != nil {
 		// Try to restore the original state if git add fails
 		_ = os.Remove(absPath)                // Ignore error in cleanup
 		_ = l.removeManagedItem(relativePath) // Ignore error in cleanup
@@ -292,8 +350,6 @@ func (l *Lnk) Remove(filePath string) error {
 		target = filepath.Join(filepath.Dir(absPath), target)
 	}
 
-	repoName := filepath.Base(target)
-
 	// Check if target is a directory or file
 	info, err := os.Stat(target)
 	if err != nil {
@@ -310,13 +366,18 @@ func (l *Lnk) Remove(filePath string) error {
 		return fmt.Errorf("failed to update tracking file: %w", err)
 	}
 
-	// Remove from Git first (while the item is still in the repository)
-	if err := l.git.Remove(repoName); err != nil {
+	// Generate the correct git path for removal
+	repoName := generateRepoName(relativePath, l.host)
+	gitPath := repoName
+	if l.host != "" {
+		gitPath = filepath.Join(l.host+".lnk", repoName)
+	}
+	if err := l.git.Remove(gitPath); err != nil {
 		return fmt.Errorf("failed to remove from git: %w", err)
 	}
 
 	// Add .lnk file to the same commit
-	if err := l.git.Add(".lnk"); err != nil {
+	if err := l.git.Add(l.getLnkFileName()); err != nil {
 		return fmt.Errorf("failed to add .lnk file to git: %w", err)
 	}
 
@@ -461,8 +522,9 @@ func (l *Lnk) RestoreSymlinks() ([]string, error) {
 
 	for _, relativePath := range managedItems {
 		// Generate repository name from relative path
-		repoName := generateRepoName(relativePath)
-		repoItem := filepath.Join(l.repoPath, repoName)
+		repoName := generateRepoName(relativePath, l.host)
+		storagePath := l.getHostStoragePath()
+		repoItem := filepath.Join(storagePath, repoName)
 
 		// Check if item exists in repository
 		if _, err := os.Stat(repoItem); os.IsNotExist(err) {
@@ -540,7 +602,7 @@ func (l *Lnk) isValidSymlink(symlinkPath, expectedTarget string) bool {
 
 // getManagedItems returns the list of managed files and directories from .lnk file
 func (l *Lnk) getManagedItems() ([]string, error) {
-	lnkFile := filepath.Join(l.repoPath, ".lnk")
+	lnkFile := filepath.Join(l.repoPath, l.getLnkFileName())
 
 	// If .lnk file doesn't exist, return empty list
 	if _, err := os.Stat(lnkFile); os.IsNotExist(err) {
@@ -613,7 +675,7 @@ func (l *Lnk) removeManagedItem(relativePath string) error {
 
 // writeManagedItems writes the list of managed items to .lnk file
 func (l *Lnk) writeManagedItems(items []string) error {
-	lnkFile := filepath.Join(l.repoPath, ".lnk")
+	lnkFile := filepath.Join(l.repoPath, l.getLnkFileName())
 
 	content := strings.Join(items, "\n")
 	if len(items) > 0 {

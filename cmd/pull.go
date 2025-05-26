@@ -8,20 +8,32 @@ import (
 )
 
 func newPullCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:          "pull",
 		Short:        "⬇️ Pull changes from remote and restore symlinks",
 		Long:         "Fetches changes from remote repository and automatically restores symlinks for all managed files.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			lnk := core.NewLnk()
+			host, _ := cmd.Flags().GetString("host")
+
+			var lnk *core.Lnk
+			if host != "" {
+				lnk = core.NewLnkWithHost(host)
+			} else {
+				lnk = core.NewLnk()
+			}
+
 			restored, err := lnk.Pull()
 			if err != nil {
 				return fmt.Errorf("failed to pull changes: %w", err)
 			}
 
 			if len(restored) > 0 {
-				printf(cmd, "⬇️  \033[1;32mSuccessfully pulled changes\033[0m\n")
+				if host != "" {
+					printf(cmd, "⬇️  \033[1;32mSuccessfully pulled changes (host: %s)\033[0m\n", host)
+				} else {
+					printf(cmd, "⬇️  \033[1;32mSuccessfully pulled changes\033[0m\n")
+				}
 				printf(cmd, "   🔗 Restored \033[1m%d symlink", len(restored))
 				if len(restored) > 1 {
 					printf(cmd, "s")
@@ -32,7 +44,11 @@ func newPullCmd() *cobra.Command {
 				}
 				printf(cmd, "\n   🎉 Your dotfiles are synced and ready!\n")
 			} else {
-				printf(cmd, "⬇️  \033[1;32mSuccessfully pulled changes\033[0m\n")
+				if host != "" {
+					printf(cmd, "⬇️  \033[1;32mSuccessfully pulled changes (host: %s)\033[0m\n", host)
+				} else {
+					printf(cmd, "⬇️  \033[1;32mSuccessfully pulled changes\033[0m\n")
+				}
 				printf(cmd, "   ✅ All symlinks already in place\n")
 				printf(cmd, "   🎉 Everything is up to date!\n")
 			}
@@ -40,4 +56,7 @@ func newPullCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringP("host", "H", "", "Pull and restore symlinks for specific host (default: common configuration)")
+	return cmd
 }
