@@ -163,6 +163,60 @@ func (suite *CLITestSuite) TestStatusCommand() {
 	suite.Contains(err.Error(), "no remote configured")
 }
 
+func (suite *CLITestSuite) TestListCommand() {
+	// Test list without init - should fail
+	err := suite.runCommand("list")
+	suite.Error(err)
+	suite.Contains(err.Error(), "Lnk repository not initialized")
+
+	// Initialize first
+	err = suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Test list with no managed files
+	err = suite.runCommand("list")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "No files currently managed by lnk")
+	suite.Contains(output, "lnk add <file>")
+	suite.stdout.Reset()
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Test list with one managed file
+	err = suite.runCommand("list")
+	suite.NoError(err)
+	output = suite.stdout.String()
+	suite.Contains(output, "Files managed by lnk")
+	suite.Contains(output, "1 item")
+	suite.Contains(output, ".bashrc")
+	suite.stdout.Reset()
+
+	// Add another file
+	testFile2 := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile2, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile2)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Test list with multiple managed files
+	err = suite.runCommand("list")
+	suite.NoError(err)
+	output = suite.stdout.String()
+	suite.Contains(output, "Files managed by lnk")
+	suite.Contains(output, "2 items")
+	suite.Contains(output, ".bashrc")
+	suite.Contains(output, ".vimrc")
+}
+
 func (suite *CLITestSuite) TestErrorHandling() {
 	tests := []struct {
 		name        string
@@ -206,6 +260,12 @@ func (suite *CLITestSuite) TestErrorHandling() {
 			args:        []string{"add", "--help"},
 			wantErr:     false,
 			outContains: "Moves a file to the lnk repository",
+		},
+		{
+			name:        "list help",
+			args:        []string{"list", "--help"},
+			wantErr:     false,
+			outContains: "Display all files and directories",
 		},
 	}
 

@@ -428,6 +428,22 @@ func (l *Lnk) Pull() ([]string, error) {
 	return restored, nil
 }
 
+// List returns the list of files and directories currently managed by lnk
+func (l *Lnk) List() ([]string, error) {
+	// Check if repository is initialized
+	if !l.git.IsGitRepository() {
+		return nil, fmt.Errorf("❌ Lnk repository not initialized\n   💡 Run \033[1mlnk init\033[0m first")
+	}
+
+	// Get managed items from .lnk file
+	managedItems, err := l.getManagedItems()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get managed items: %w", err)
+	}
+
+	return managedItems, nil
+}
+
 // RestoreSymlinks finds all managed items from .lnk file and ensures they have proper symlinks
 func (l *Lnk) RestoreSymlinks() ([]string, error) {
 	var restored []string

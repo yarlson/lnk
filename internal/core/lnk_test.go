@@ -516,6 +516,76 @@ func (suite *CoreTestSuite) TestStatusDetectsDirtyRepo() {
 	suite.True(status.Dirty, "Repository should be dirty after editing managed file")
 }
 
+// Test list functionality
+func (suite *CoreTestSuite) TestListManagedItems() {
+	// Test list without init - should fail
+	_, err := suite.lnk.List()
+	suite.Error(err)
+	suite.Contains(err.Error(), "Lnk repository not initialized")
+
+	// Initialize repository
+	err = suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Test list with no managed files
+	items, err := suite.lnk.List()
+	suite.Require().NoError(err)
+	suite.Empty(items)
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	content := "export PATH=$PATH:/usr/local/bin"
+	err = os.WriteFile(testFile, []byte(content), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Test list with one managed file
+	items, err = suite.lnk.List()
+	suite.Require().NoError(err)
+	suite.Len(items, 1)
+	suite.Contains(items[0], ".bashrc")
+
+	// Add a directory
+	testDir := filepath.Join(suite.tempDir, ".config")
+	err = os.MkdirAll(testDir, 0755)
+	suite.Require().NoError(err)
+	configFile := filepath.Join(testDir, "app.conf")
+	err = os.WriteFile(configFile, []byte("setting=value"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testDir)
+	suite.Require().NoError(err)
+
+	// Test list with multiple managed items
+	items, err = suite.lnk.List()
+	suite.Require().NoError(err)
+	suite.Len(items, 2)
+
+	// Check that both items are present
+	found := make(map[string]bool)
+	for _, item := range items {
+		if strings.Contains(item, ".bashrc") {
+			found[".bashrc"] = true
+		}
+		if strings.Contains(item, ".config") {
+			found[".config"] = true
+		}
+	}
+	suite.True(found[".bashrc"], "Should contain .bashrc")
+	suite.True(found[".config"], "Should contain .config")
+
+	// Remove one item and verify list is updated
+	err = suite.lnk.Remove(testFile)
+	suite.Require().NoError(err)
+
+	items, err = suite.lnk.List()
+	suite.Require().NoError(err)
+	suite.Len(items, 1)
+	suite.Contains(items[0], ".config")
+}
+
 func TestCoreSuite(t *testing.T) {
 	suite.Run(t, new(CoreTestSuite))
 }

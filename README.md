@@ -52,6 +52,9 @@ lnk init -r git@github.com:user/dotfiles.git
 # Add files/directories
 lnk add ~/.vimrc ~/.config/nvim ~/.gitconfig
 
+# List managed files
+lnk list
+
 # Check status
 lnk status
 
@@ -99,6 +102,7 @@ lnk pull  # auto-creates symlinks
 
 ```bash
 vim ~/.vimrc           # edit normally
+lnk list               # see what's managed
 lnk status             # check what changed
 lnk push "new plugins" # commit & push
 ```
@@ -108,6 +112,7 @@ lnk push "new plugins" # commit & push
 - `lnk init [-r remote]` - Create repo
 - `lnk add <files>` - Move files to repo, create symlinks
 - `lnk rm <files>` - Move files back, remove symlinks
+- `lnk list` - List files managed by lnk
 - `lnk status` - Git status + sync info
 - `lnk push [msg]` - Stage all, commit, push
 - `lnk pull` - Pull + restore missing symlinks

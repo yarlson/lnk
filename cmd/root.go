@@ -38,6 +38,7 @@ That's it.
 	rootCmd.AddCommand(newInitCmd())
 	rootCmd.AddCommand(newAddCmd())
 	rootCmd.AddCommand(newRemoveCmd())
+	rootCmd.AddCommand(newListCmd())
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newPushCmd())
 	rootCmd.AddCommand(newPullCmd())
