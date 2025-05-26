@@ -82,19 +82,11 @@ func (suite *CoreTestSuite) TestCoreFileOperations() {
 	suite.Require().NoError(err)
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
 
-	// The repository file will have a generated name based on the relative path
+	// The repository file will preserve the directory structure
 	lnkDir := filepath.Join(suite.tempDir, "lnk")
-	entries, err := os.ReadDir(lnkDir)
-	suite.Require().NoError(err)
 
-	var repoFile string
-	for _, entry := range entries {
-		if strings.Contains(entry.Name(), ".bashrc") && entry.Name() != ".lnk" {
-			repoFile = filepath.Join(lnkDir, entry.Name())
-			break
-		}
-	}
-	suite.NotEmpty(repoFile, "Repository should contain a file with .bashrc in the name")
+	// Find the .bashrc file in the repository (it should be at the relative path)
+	repoFile := filepath.Join(lnkDir, suite.tempDir, ".bashrc")
 	suite.FileExists(repoFile)
 
 	// Verify content is preserved
@@ -141,19 +133,11 @@ func (suite *CoreTestSuite) TestCoreDirectoryOperations() {
 	suite.Require().NoError(err)
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
 
-	// Check that some repository directory exists with testdir in the name
+	// Check that the repository directory preserves the structure
 	lnkDir := filepath.Join(suite.tempDir, "lnk")
-	entries, err := os.ReadDir(lnkDir)
-	suite.Require().NoError(err)
 
-	var repoDir string
-	for _, entry := range entries {
-		if strings.Contains(entry.Name(), "testdir") && entry.Name() != ".lnk" {
-			repoDir = filepath.Join(lnkDir, entry.Name())
-			break
-		}
-	}
-	suite.NotEmpty(repoDir, "Repository should contain a directory with testdir in the name")
+	// The directory should be at the relative path
+	repoDir := filepath.Join(lnkDir, suite.tempDir, "testdir")
 	suite.DirExists(repoDir)
 
 	// Remove the directory

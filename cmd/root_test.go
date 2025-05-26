@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -107,19 +106,10 @@ func (suite *CLITestSuite) TestAddCommand() {
 	suite.NoError(err)
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
 
-	// Verify some file exists in repo with .bashrc in the name
+	// Verify the file exists in repo with preserved directory structure
 	lnkDir := filepath.Join(suite.tempDir, "lnk")
-	entries, err := os.ReadDir(lnkDir)
-	suite.NoError(err)
-
-	found := false
-	for _, entry := range entries {
-		if strings.Contains(entry.Name(), ".bashrc") && entry.Name() != ".lnk" {
-			found = true
-			break
-		}
-	}
-	suite.True(found, "Repository should contain a file with .bashrc in the name")
+	repoFile := filepath.Join(lnkDir, suite.tempDir, ".bashrc")
+	suite.FileExists(repoFile)
 }
 
 func (suite *CLITestSuite) TestRemoveCommand() {
@@ -397,19 +387,10 @@ func (suite *CLITestSuite) TestAddDirectory() {
 	suite.NoError(err)
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
 
-	// Verify some directory exists in repo with .config in the name
+	// Verify the directory exists in repo with preserved directory structure
 	lnkDir := filepath.Join(suite.tempDir, "lnk")
-	entries, err := os.ReadDir(lnkDir)
-	suite.NoError(err)
-
-	found := false
-	for _, entry := range entries {
-		if strings.Contains(entry.Name(), ".config") && entry.Name() != ".lnk" {
-			found = true
-			break
-		}
-	}
-	suite.True(found, "Repository should contain a directory with .config in the name")
+	repoDir := filepath.Join(lnkDir, suite.tempDir, ".config")
+	suite.DirExists(repoDir)
 }
 
 func (suite *CLITestSuite) TestSameBasenameFilesBug() {

@@ -67,16 +67,9 @@ func getRepoPath() string {
 
 // generateRepoName creates a repository path from a relative path
 func generateRepoName(relativePath string, host string) string {
-	if host != "" {
-		// For host-specific files, preserve the directory structure
-		return relativePath
-	}
-
-	// For common files, replace slashes and backslashes with underscores to create valid filename
-	repoName := strings.ReplaceAll(relativePath, "/", "_")
-	repoName = strings.ReplaceAll(repoName, "\\", "_")
-
-	return repoName
+	// Always preserve the directory structure for consistency
+	// Both common and host-specific files should maintain their path structure
+	return relativePath
 }
 
 // getHostStoragePath returns the storage path for host-specific or common files

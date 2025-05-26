@@ -33,10 +33,10 @@ func newAddCmd() *cobra.Command {
 			basename := filepath.Base(filePath)
 			if host != "" {
 				printf(cmd, "✨ \033[1mAdded %s to lnk (host: %s)\033[0m\n", basename, host)
-				printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s.lnk/%s\033[0m\n", filePath, host, basename)
+				printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s.lnk/%s\033[0m\n", filePath, host, filePath)
 			} else {
 				printf(cmd, "✨ \033[1mAdded %s to lnk\033[0m\n", basename)
-				printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s\033[0m\n", filePath, basename)
+				printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s\033[0m\n", filePath, filePath)
 			}
 			printf(cmd, "   📝 Use \033[1mlnk push\033[0m to sync to remote\n")
 			return nil
