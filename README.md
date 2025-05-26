@@ -133,20 +133,6 @@ lnk push "new plugins" # commit & push
 | dotbot  | Low        | YAML config, basic features           |
 | stow    | Low        | Perl, symlink only                    |
 
-## FAQ
-
-**Q: What if I already have dotfiles in Git?**  
-A: `git clone your-repo ~/.config/lnk && lnk add ~/.vimrc` (adopts existing files)
-
-**Q: How do I handle machine-specific configs?**  
-A: Git branches, or just don't manage machine-specific files with lnk
-
-**Q: Windows support?**  
-A: Symlinks work on Windows 10+, but untested
-
-**Q: Production ready?**  
-A: I use it daily. It won't break your files. API might change (pre-1.0).
-
 ## Contributing
 
 ```bash
