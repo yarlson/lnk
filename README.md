@@ -55,7 +55,7 @@ lnk add ~/.vimrc ~/.config/nvim ~/.gitconfig
 
 # Add host-specific files
 lnk add --host laptop ~/.ssh/config
-lnk add --host work ~/.aws/credentials
+lnk add --host work ~/.gitconfig
 
 # List managed files
 lnk list                    # Common config only
@@ -101,13 +101,11 @@ Lnk supports both **common configurations** (shared across all machines) and **h
 ├── laptop.lnk/             # Laptop-specific storage
 │   ├── .ssh/
 │   │   └── config
-│   └── .aws/
-│       └── credentials
+│   └── .tmux.conf
 └── work.lnk/               # Work-specific storage
     ├── .ssh/
     │   └── config
-    └── .company/
-        └── config
+    └── .gitconfig
 ```
 
 ### Usage Patterns
@@ -118,7 +116,7 @@ lnk add ~/.vimrc ~/.bashrc ~/.gitconfig
 
 # Host-specific config (unique per machine)
 lnk add --host $(hostname) ~/.ssh/config
-lnk add --host work ~/.aws/credentials
+lnk add --host work ~/.gitconfig
 
 # List configurations
 lnk list                    # Common only
@@ -150,7 +148,7 @@ lnk init -r git@github.com:you/dotfiles.git
 lnk add ~/.bashrc ~/.vimrc ~/.gitconfig
 
 # Add host-specific config
-lnk add --host $(hostname) ~/.ssh/config ~/.aws/credentials
+lnk add --host $(hostname) ~/.ssh/config ~/.tmux.conf
 
 lnk push "initial setup"
 ```
@@ -186,10 +184,10 @@ lnk add --host laptop ~/.ssh/config
 lnk add ~/.vimrc                # Common config
 lnk push "laptop ssh config"
 
-# On your work machine
+# On your work machine  
 lnk pull                        # Get common config
-lnk add --host work ~/.aws/credentials
-lnk push "work aws config"
+lnk add --host work ~/.gitconfig
+lnk push "work git config"
 
 # Back on laptop
 lnk pull                        # Get updates (work config won't affect laptop)
