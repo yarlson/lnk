@@ -65,13 +65,6 @@ func getRepoPath() string {
 	return filepath.Join(xdgConfig, "lnk")
 }
 
-// generateRepoName creates a repository path from a relative path
-func generateRepoName(relativePath string, host string) string {
-	// Always preserve the directory structure for consistency
-	// Both common and host-specific files should maintain their path structure
-	return relativePath
-}
-
 // getHostStoragePath returns the storage path for host-specific or common files
 func (l *Lnk) getHostStoragePath() string {
 	if l.host == "" {
@@ -187,9 +180,8 @@ func (l *Lnk) Add(filePath string) error {
 	}
 
 	// Generate repository path from relative path
-	repoName := generateRepoName(relativePath, l.host)
 	storagePath := l.getHostStoragePath()
-	destPath := filepath.Join(storagePath, repoName)
+	destPath := filepath.Join(storagePath, relativePath)
 
 	// Ensure destination directory exists (including parent directories for host-specific files)
 	destDir := filepath.Dir(destPath)
@@ -250,9 +242,9 @@ func (l *Lnk) Add(filePath string) error {
 
 	// Add both the item and .lnk file to git in a single commit
 	// For host-specific files, we need to add the relative path from repo root
-	gitPath := repoName
+	gitPath := relativePath
 	if l.host != "" {
-		gitPath = filepath.Join(l.host+".lnk", repoName)
+		gitPath = filepath.Join(l.host+".lnk", relativePath)
 	}
 	if err := l.git.Add(gitPath); err != nil {
 		// Try to restore the original state if git add fails
@@ -360,10 +352,9 @@ func (l *Lnk) Remove(filePath string) error {
 	}
 
 	// Generate the correct git path for removal
-	repoName := generateRepoName(relativePath, l.host)
-	gitPath := repoName
+	gitPath := relativePath
 	if l.host != "" {
-		gitPath = filepath.Join(l.host+".lnk", repoName)
+		gitPath = filepath.Join(l.host+".lnk", relativePath)
 	}
 	if err := l.git.Remove(gitPath); err != nil {
 		return fmt.Errorf("failed to remove from git: %w", err)
@@ -515,9 +506,8 @@ func (l *Lnk) RestoreSymlinks() ([]string, error) {
 
 	for _, relativePath := range managedItems {
 		// Generate repository name from relative path
-		repoName := generateRepoName(relativePath, l.host)
 		storagePath := l.getHostStoragePath()
-		repoItem := filepath.Join(storagePath, repoName)
+		repoItem := filepath.Join(storagePath, relativePath)
 
 		// Check if item exists in repository
 		if _, err := os.Stat(repoItem); os.IsNotExist(err) {
