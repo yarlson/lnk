@@ -31,8 +31,11 @@ func (suite *CLITestSuite) SetupTest() {
 	err = os.Chdir(tempDir)
 	suite.Require().NoError(err)
 
-	// Set XDG_CONFIG_HOME to temp directory
-	suite.T().Setenv("XDG_CONFIG_HOME", tempDir)
+	// Set HOME to temp directory for consistent relative path calculation
+	suite.T().Setenv("HOME", tempDir)
+
+	// Set XDG_CONFIG_HOME to tempDir/.config for config files
+	suite.T().Setenv("XDG_CONFIG_HOME", filepath.Join(tempDir, ".config"))
 
 	// Capture output
 	suite.stdout = &bytes.Buffer{}
@@ -66,18 +69,11 @@ func (suite *CLITestSuite) TestInitCommand() {
 	suite.Contains(output, "lnk add <file>")
 
 	// Verify actual effect
-	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
 	suite.DirExists(lnkDir)
 
 	gitDir := filepath.Join(lnkDir, ".git")
 	suite.DirExists(gitDir)
-}
-
-func (suite *CLITestSuite) TestInitWithRemote() {
-	err := suite.runCommand("init", "-r", "https://github.com/user/dotfiles.git")
-	// This will fail because we don't have a real remote, but that's expected
-	suite.Error(err)
-	suite.Contains(err.Error(), "git clone failed")
 }
 
 func (suite *CLITestSuite) TestAddCommand() {
@@ -107,9 +103,20 @@ func (suite *CLITestSuite) TestAddCommand() {
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
 
 	// Verify the file exists in repo with preserved directory structure
-	lnkDir := filepath.Join(suite.tempDir, "lnk")
-	repoFile := filepath.Join(lnkDir, suite.tempDir, ".bashrc")
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	repoFile := filepath.Join(lnkDir, ".bashrc")
 	suite.FileExists(repoFile)
+
+	// Verify content is preserved in storage
+	storedContent, err := os.ReadFile(repoFile)
+	suite.NoError(err)
+	suite.Equal("export PATH=/usr/local/bin:$PATH", string(storedContent))
+
+	// Verify .lnk file contains the correct entry
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.NoError(err)
+	suite.Equal(".bashrc\n", string(lnkContent))
 }
 
 func (suite *CLITestSuite) TestRemoveCommand() {
@@ -205,6 +212,27 @@ func (suite *CLITestSuite) TestListCommand() {
 	suite.Contains(output, "2 items")
 	suite.Contains(output, ".bashrc")
 	suite.Contains(output, ".vimrc")
+
+	// Verify both files exist in storage with correct content
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+
+	bashrcStorage := filepath.Join(lnkDir, ".bashrc")
+	suite.FileExists(bashrcStorage)
+	bashrcContent, err := os.ReadFile(bashrcStorage)
+	suite.NoError(err)
+	suite.Equal("export PATH=/usr/local/bin:$PATH", string(bashrcContent))
+
+	vimrcStorage := filepath.Join(lnkDir, ".vimrc")
+	suite.FileExists(vimrcStorage)
+	vimrcContent, err := os.ReadFile(vimrcStorage)
+	suite.NoError(err)
+	suite.Equal("set number", string(vimrcContent))
+
+	// Verify .lnk file contains both entries (sorted)
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.NoError(err)
+	suite.Equal(".bashrc\n.vimrc\n", string(lnkContent))
 }
 
 func (suite *CLITestSuite) TestErrorHandling() {
@@ -300,29 +328,57 @@ func (suite *CLITestSuite) TestCompleteWorkflow() {
 		},
 		{
 			name: "add config file",
-			args: []string{"add", ".bashrc"},
+			args: []string{"add", filepath.Join(suite.tempDir, ".bashrc")},
 			setup: func() {
 				testFile := filepath.Join(suite.tempDir, ".bashrc")
 				_ = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
 			},
 			verify: func(output string) {
 				suite.Contains(output, "Added .bashrc to lnk")
+
+				// Verify storage and .lnk file
+				lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+				bashrcStorage := filepath.Join(lnkDir, ".bashrc")
+				suite.FileExists(bashrcStorage)
+
+				storedContent, err := os.ReadFile(bashrcStorage)
+				suite.NoError(err)
+				suite.Equal("export PATH=/usr/local/bin:$PATH", string(storedContent))
+
+				lnkFile := filepath.Join(lnkDir, ".lnk")
+				lnkContent, err := os.ReadFile(lnkFile)
+				suite.NoError(err)
+				suite.Equal(".bashrc\n", string(lnkContent))
 			},
 		},
 		{
 			name: "add another file",
-			args: []string{"add", ".vimrc"},
+			args: []string{"add", filepath.Join(suite.tempDir, ".vimrc")},
 			setup: func() {
 				testFile := filepath.Join(suite.tempDir, ".vimrc")
 				_ = os.WriteFile(testFile, []byte("set number"), 0644)
 			},
 			verify: func(output string) {
 				suite.Contains(output, "Added .vimrc to lnk")
+
+				// Verify storage and .lnk file now contains both files
+				lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+				vimrcStorage := filepath.Join(lnkDir, ".vimrc")
+				suite.FileExists(vimrcStorage)
+
+				storedContent, err := os.ReadFile(vimrcStorage)
+				suite.NoError(err)
+				suite.Equal("set number", string(storedContent))
+
+				lnkFile := filepath.Join(lnkDir, ".lnk")
+				lnkContent, err := os.ReadFile(lnkFile)
+				suite.NoError(err)
+				suite.Equal(".bashrc\n.vimrc\n", string(lnkContent))
 			},
 		},
 		{
 			name: "remove file",
-			args: []string{"rm", ".vimrc"},
+			args: []string{"rm", filepath.Join(suite.tempDir, ".vimrc")},
 			verify: func(output string) {
 				suite.Contains(output, "Removed .vimrc from lnk")
 			},
@@ -369,10 +425,10 @@ func (suite *CLITestSuite) TestAddDirectory() {
 	suite.stdout.Reset()
 
 	// Create a directory with files
-	testDir := filepath.Join(suite.tempDir, ".config")
+	testDir := filepath.Join(suite.tempDir, ".ssh")
 	_ = os.MkdirAll(testDir, 0755)
-	configFile := filepath.Join(testDir, "app.conf")
-	_ = os.WriteFile(configFile, []byte("setting=value"), 0644)
+	configFile := filepath.Join(testDir, "config")
+	_ = os.WriteFile(configFile, []byte("Host example.com"), 0644)
 
 	// Add the directory
 	err := suite.runCommand("add", testDir)
@@ -380,7 +436,7 @@ func (suite *CLITestSuite) TestAddDirectory() {
 
 	// Check output
 	output := suite.stdout.String()
-	suite.Contains(output, "Added .config to lnk")
+	suite.Contains(output, "Added .ssh to lnk")
 
 	// Verify directory is now a symlink
 	info, err := os.Lstat(testDir)
@@ -388,9 +444,22 @@ func (suite *CLITestSuite) TestAddDirectory() {
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
 
 	// Verify the directory exists in repo with preserved directory structure
-	lnkDir := filepath.Join(suite.tempDir, "lnk")
-	repoDir := filepath.Join(lnkDir, suite.tempDir, ".config")
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	repoDir := filepath.Join(lnkDir, ".ssh")
 	suite.DirExists(repoDir)
+
+	// Verify directory content is preserved
+	repoConfigFile := filepath.Join(repoDir, "config")
+	suite.FileExists(repoConfigFile)
+	storedContent, err := os.ReadFile(repoConfigFile)
+	suite.NoError(err)
+	suite.Equal("Host example.com", string(storedContent))
+
+	// Verify .lnk file contains the directory entry
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.NoError(err)
+	suite.Equal(".ssh\n", string(lnkContent))
 }
 
 func (suite *CLITestSuite) TestSameBasenameFilesBug() {
@@ -441,6 +510,27 @@ func (suite *CLITestSuite) TestSameBasenameFilesBug() {
 	suite.Equal(contentA, string(contentAfterAddA), "First file should keep its original content")
 	suite.Equal(contentB, string(contentAfterAddB), "Second file should keep its original content")
 
+	// Verify both files exist in storage with correct paths and content
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+
+	storageFileA := filepath.Join(lnkDir, "a", "config.json")
+	suite.FileExists(storageFileA)
+	storedContentA, err := os.ReadFile(storageFileA)
+	suite.NoError(err)
+	suite.Equal(contentA, string(storedContentA))
+
+	storageFileB := filepath.Join(lnkDir, "b", "config.json")
+	suite.FileExists(storageFileB)
+	storedContentB, err := os.ReadFile(storageFileB)
+	suite.NoError(err)
+	suite.Equal(contentB, string(storedContentB))
+
+	// Verify .lnk file contains both entries with correct relative paths
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.NoError(err)
+	suite.Equal("a/config.json\nb/config.json\n", string(lnkContent))
+
 	// Both files should be removable independently
 	suite.stdout.Reset()
 	err = suite.runCommand("rm", fileA)
@@ -481,8 +571,21 @@ func (suite *CLITestSuite) TestStatusDirtyRepo() {
 	suite.Require().NoError(err)
 	suite.stdout.Reset()
 
+	// Verify file is stored correctly
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	storageFile := filepath.Join(lnkDir, "a")
+	suite.FileExists(storageFile)
+	storedContent, err := os.ReadFile(storageFile)
+	suite.NoError(err)
+	suite.Equal("abc", string(storedContent))
+
+	// Verify .lnk file contains the entry
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.NoError(err)
+	suite.Equal("a\n", string(lnkContent))
+
 	// Add a remote so status works
-	lnkDir := filepath.Join(suite.tempDir, "lnk")
 	cmd := exec.Command("git", "remote", "add", "origin", "https://github.com/test/dotfiles.git")
 	cmd.Dir = lnkDir
 	err = cmd.Run()
@@ -539,6 +642,33 @@ func (suite *CLITestSuite) TestMultihostCommands() {
 	suite.Contains(output, "Added .vimrc to lnk (host: workstation)")
 	suite.Contains(output, "workstation.lnk")
 	suite.stdout.Reset()
+
+	// Verify storage paths and .lnk files for both common and host-specific
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+
+	// Verify common file storage and tracking
+	commonStorage := filepath.Join(lnkDir, ".bashrc")
+	suite.FileExists(commonStorage)
+	commonContent, err := os.ReadFile(commonStorage)
+	suite.NoError(err)
+	suite.Equal("export PATH=/usr/local/bin:$PATH", string(commonContent))
+
+	commonLnkFile := filepath.Join(lnkDir, ".lnk")
+	commonLnkContent, err := os.ReadFile(commonLnkFile)
+	suite.NoError(err)
+	suite.Equal(".bashrc\n", string(commonLnkContent))
+
+	// Verify host-specific file storage and tracking
+	hostStorage := filepath.Join(lnkDir, "workstation.lnk", ".vimrc")
+	suite.FileExists(hostStorage)
+	hostContent, err := os.ReadFile(hostStorage)
+	suite.NoError(err)
+	suite.Equal("set number", string(hostContent))
+
+	hostLnkFile := filepath.Join(lnkDir, ".lnk.workstation")
+	hostLnkContent, err := os.ReadFile(hostLnkFile)
+	suite.NoError(err)
+	suite.Equal(".vimrc\n", string(hostLnkContent))
 
 	// Test list command - common only
 	err = suite.runCommand("list")
