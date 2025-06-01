@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/yarlson/lnk/internal/core"
+	
+	"github.com/yarlson/lnk/internal/service"
 )
 
 func newListCmd() *cobra.Command {
@@ -41,26 +42,31 @@ func newListCmd() *cobra.Command {
 }
 
 func listCommonConfig(cmd *cobra.Command) error {
-	lnk := core.NewLnk()
-	managedItems, err := lnk.List()
+	ctx := context.Background()
+	lnkService, err := service.New()
 	if err != nil {
-		return fmt.Errorf("failed to list managed items: %w", err)
+		return wrapServiceError("initialize lnk service", err)
 	}
 
-	if len(managedItems) == 0 {
+	managedFiles, err := lnkService.ListManagedFiles(ctx, "")
+	if err != nil {
+		return formatError(err)
+	}
+
+	if len(managedFiles) == 0 {
 		printf(cmd, "📋 \033[1mNo files currently managed by lnk (common)\033[0m\n")
 		printf(cmd, "   💡 Use \033[1mlnk add <file>\033[0m to start managing files\n")
 		return nil
 	}
 
-	printf(cmd, "📋 \033[1mFiles managed by lnk (common)\033[0m (\033[36m%d item", len(managedItems))
-	if len(managedItems) > 1 {
+	printf(cmd, "📋 \033[1mFiles managed by lnk (common)\033[0m (\033[36m%d item", len(managedFiles))
+	if len(managedFiles) > 1 {
 		printf(cmd, "s")
 	}
 	printf(cmd, "\033[0m):\n\n")
 
-	for _, item := range managedItems {
-		printf(cmd, "   🔗 \033[36m%s\033[0m\n", item)
+	for _, file := range managedFiles {
+		printf(cmd, "   🔗 \033[36m%s\033[0m\n", file.RelativePath)
 	}
 
 	printf(cmd, "\n💡 Use \033[1mlnk status\033[0m to check sync status\n")
@@ -68,26 +74,31 @@ func listCommonConfig(cmd *cobra.Command) error {
 }
 
 func listHostConfig(cmd *cobra.Command, host string) error {
-	lnk := core.NewLnkWithHost(host)
-	managedItems, err := lnk.List()
+	ctx := context.Background()
+	lnkService, err := service.New()
 	if err != nil {
-		return fmt.Errorf("failed to list managed items for host %s: %w", host, err)
+		return wrapServiceError("initialize lnk service", err)
 	}
 
-	if len(managedItems) == 0 {
+	managedFiles, err := lnkService.ListManagedFiles(ctx, host)
+	if err != nil {
+		return formatError(err)
+	}
+
+	if len(managedFiles) == 0 {
 		printf(cmd, "📋 \033[1mNo files currently managed by lnk (host: %s)\033[0m\n", host)
 		printf(cmd, "   💡 Use \033[1mlnk add --host %s <file>\033[0m to start managing files\n", host)
 		return nil
 	}
 
-	printf(cmd, "📋 \033[1mFiles managed by lnk (host: %s)\033[0m (\033[36m%d item", host, len(managedItems))
-	if len(managedItems) > 1 {
+	printf(cmd, "📋 \033[1mFiles managed by lnk (host: %s)\033[0m (\033[36m%d item", host, len(managedFiles))
+	if len(managedFiles) > 1 {
 		printf(cmd, "s")
 	}
 	printf(cmd, "\033[0m):\n\n")
 
-	for _, item := range managedItems {
-		printf(cmd, "   🔗 \033[36m%s\033[0m\n", item)
+	for _, file := range managedFiles {
+		printf(cmd, "   🔗 \033[36m%s\033[0m\n", file.RelativePath)
 	}
 
 	printf(cmd, "\n💡 Use \033[1mlnk status\033[0m to check sync status\n")
@@ -95,56 +106,60 @@ func listHostConfig(cmd *cobra.Command, host string) error {
 }
 
 func listAllConfigs(cmd *cobra.Command) error {
+	ctx := context.Background()
+	lnkService, err := service.New()
+	if err != nil {
+		return wrapServiceError("initialize lnk service", err)
+	}
+
 	// List common configuration
 	printf(cmd, "📋 \033[1mAll configurations managed by lnk\033[0m\n\n")
 
-	lnk := core.NewLnk()
-	commonItems, err := lnk.List()
+	commonFiles, err := lnkService.ListManagedFiles(ctx, "")
 	if err != nil {
-		return fmt.Errorf("failed to list common managed items: %w", err)
+		return formatError(err)
 	}
 
-	printf(cmd, "🌐 \033[1mCommon configuration\033[0m (\033[36m%d item", len(commonItems))
-	if len(commonItems) > 1 {
+	printf(cmd, "🌐 \033[1mCommon configuration\033[0m (\033[36m%d item", len(commonFiles))
+	if len(commonFiles) > 1 {
 		printf(cmd, "s")
 	}
 	printf(cmd, "\033[0m):\n")
 
-	if len(commonItems) == 0 {
+	if len(commonFiles) == 0 {
 		printf(cmd, "   \033[90m(no files)\033[0m\n")
 	} else {
-		for _, item := range commonItems {
-			printf(cmd, "   🔗 \033[36m%s\033[0m\n", item)
+		for _, file := range commonFiles {
+			printf(cmd, "   🔗 \033[36m%s\033[0m\n", file.RelativePath)
 		}
 	}
 
 	// Find all host-specific configurations
-	hosts, err := findHostConfigs()
+	hosts, err := findHostConfigs(lnkService)
 	if err != nil {
-		return fmt.Errorf("failed to find host configurations: %w", err)
+		return formatError(err)
 	}
 
 	for _, host := range hosts {
 		printf(cmd, "\n🖥️  \033[1mHost: %s\033[0m", host)
 
-		hostLnk := core.NewLnkWithHost(host)
-		hostItems, err := hostLnk.List()
+		hostFiles, err := lnkService.ListManagedFiles(ctx, host)
 		if err != nil {
 			printf(cmd, " \033[31m(error: %v)\033[0m\n", err)
 			continue
 		}
 
-		printf(cmd, " (\033[36m%d item", len(hostItems))
-		if len(hostItems) > 1 {
+		printf(cmd, " (\033[36m%d item", len(hostFiles))
+		if len(hostFiles) > 1 {
 			printf(cmd, "s")
 		}
 		printf(cmd, "\033[0m):\n")
 
-		if len(hostItems) == 0 {
+		if len(hostFiles) == 0 {
 			printf(cmd, "   \033[90m(no files)\033[0m\n")
 		} else {
-			for _, item := range hostItems {
-				printf(cmd, "   🔗 \033[36m%s\033[0m\n", item)
+			for _, file := range hostFiles {
+				printf(cmd, "   🔗 \033[36m%s\033[0m\n", file.RelativePath)
 			}
 		}
 	}
@@ -153,8 +168,8 @@ func listAllConfigs(cmd *cobra.Command) error {
 	return nil
 }
 
-func findHostConfigs() ([]string, error) {
-	repoPath := getRepoPath()
+func findHostConfigs(service *service.Service) ([]string, error) {
+	repoPath := service.GetRepoPath()
 
 	// Check if repo exists
 	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
@@ -177,17 +192,4 @@ func findHostConfigs() ([]string, error) {
 	}
 
 	return hosts, nil
-}
-
-func getRepoPath() string {
-	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
-	if xdgConfig == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			xdgConfig = "."
-		} else {
-			xdgConfig = filepath.Join(homeDir, ".config")
-		}
-	}
-	return filepath.Join(xdgConfig, "lnk")
 }

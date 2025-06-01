@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"fmt"
+	"context"
 
 	"github.com/spf13/cobra"
-	"github.com/yarlson/lnk/internal/core"
+
+	"github.com/yarlson/lnk/internal/service"
 )
 
 func newPushCmd() *cobra.Command {
@@ -20,9 +21,16 @@ func newPushCmd() *cobra.Command {
 				message = args[0]
 			}
 
-			lnk := core.NewLnk()
-			if err := lnk.Push(message); err != nil {
-				return fmt.Errorf("failed to push changes: %w", err)
+			// Create service instance
+			lnkService, err := service.New()
+			if err != nil {
+				return wrapServiceError("initialize lnk service", err)
+			}
+
+			// Push changes using the service
+			ctx := context.Background()
+			if err := lnkService.PushChanges(ctx, message); err != nil {
+				return formatError(err)
 			}
 
 			printf(cmd, "🚀 \033[1;32mSuccessfully pushed changes\033[0m\n")

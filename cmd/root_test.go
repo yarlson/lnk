@@ -416,7 +416,7 @@ func (suite *CLITestSuite) TestRemoveUnmanagedFile() {
 	// Try to remove it
 	err := suite.runCommand("rm", testFile)
 	suite.Error(err)
-	suite.Contains(err.Error(), "File is not managed by lnk")
+	suite.Contains(err.Error(), "not a symlink")
 }
 
 func (suite *CLITestSuite) TestAddDirectory() {
@@ -460,6 +460,54 @@ func (suite *CLITestSuite) TestAddDirectory() {
 	lnkContent, err := os.ReadFile(lnkFile)
 	suite.NoError(err)
 	suite.Equal(".ssh\n", string(lnkContent))
+}
+
+func (suite *CLITestSuite) TestRemoveDirectory() {
+	// Initialize repository
+	_ = suite.runCommand("init")
+	suite.stdout.Reset()
+
+	// Create a directory with files
+	testDir := filepath.Join(suite.tempDir, ".config", "aerospace")
+	_ = os.MkdirAll(testDir, 0755)
+	configFile := filepath.Join(testDir, "aerospace.toml")
+	_ = os.WriteFile(configFile, []byte("# Aerospace config"), 0644)
+
+	// Add the directory
+	err := suite.runCommand("add", testDir)
+	suite.NoError(err)
+	suite.stdout.Reset()
+
+	// Verify directory is now a symlink
+	info, err := os.Lstat(testDir)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+
+	// Remove the directory
+	err = suite.runCommand("rm", testDir)
+	suite.NoError(err, "Should be able to remove directory without error")
+
+	// Check output
+	output := suite.stdout.String()
+	suite.Contains(output, "Removed aerospace from lnk")
+	suite.Contains(output, "Original file restored")
+
+	// Verify directory is no longer a symlink
+	info, err = os.Lstat(testDir)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink) // Not a symlink
+
+	// Verify directory content is preserved
+	content, err := os.ReadFile(configFile)
+	suite.NoError(err)
+	suite.Equal("# Aerospace config", string(content))
+
+	// Verify directory is removed from tracking
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.NoError(err)
+	suite.Equal("", string(lnkContent), ".lnk file should be empty after removing directory")
 }
 
 func (suite *CLITestSuite) TestSameBasenameFilesBug() {
@@ -737,7 +785,7 @@ func (suite *CLITestSuite) TestMultihostErrorHandling() {
 
 	err = suite.runCommand("rm", "--host", "nonexistent", testFile)
 	suite.Error(err)
-	suite.Contains(err.Error(), "File is not managed by lnk")
+	suite.Contains(err.Error(), "not a symlink")
 
 	// Try to list non-existent host config
 	err = suite.runCommand("list", "--host", "nonexistent")

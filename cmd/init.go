@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"fmt"
+	"context"
 
 	"github.com/spf13/cobra"
-	"github.com/yarlson/lnk/internal/core"
+	
+	"github.com/yarlson/lnk/internal/service"
 )
 
 func newInitCmd() *cobra.Command {
@@ -16,11 +17,19 @@ func newInitCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			remote, _ := cmd.Flags().GetString("remote")
 
-			lnk := core.NewLnk()
-			if err := lnk.InitWithRemote(remote); err != nil {
-				return fmt.Errorf("failed to initialize lnk: %w", err)
+			// Create service instance
+			lnkService, err := service.New()
+			if err != nil {
+				return wrapServiceError("initialize lnk service", err)
 			}
 
+			// Initialize repository using service layer
+			ctx := context.Background()
+			if err := lnkService.InitializeRepository(ctx, remote); err != nil {
+				return formatError(err)
+			}
+
+			// Display success message
 			if remote != "" {
 				printf(cmd, "🎯 \033[1mInitialized lnk repository\033[0m\n")
 				printf(cmd, "   📦 Cloned from: \033[36m%s\033[0m\n", remote)

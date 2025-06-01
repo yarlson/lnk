@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"fmt"
+	"context"
 
 	"github.com/spf13/cobra"
-	"github.com/yarlson/lnk/internal/core"
+	
+	"github.com/yarlson/lnk/internal/service"
 )
 
 func newPullCmd() *cobra.Command {
@@ -16,16 +17,17 @@ func newPullCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, _ := cmd.Flags().GetString("host")
 
-			var lnk *core.Lnk
-			if host != "" {
-				lnk = core.NewLnkWithHost(host)
-			} else {
-				lnk = core.NewLnk()
+			// Create service instance
+			lnkService, err := service.New()
+			if err != nil {
+				return wrapServiceError("initialize lnk service", err)
 			}
 
-			restored, err := lnk.Pull()
+			// Pull changes using the service
+			ctx := context.Background()
+			restored, err := lnkService.PullChanges(ctx, host)
 			if err != nil {
-				return fmt.Errorf("failed to pull changes: %w", err)
+				return formatError(err)
 			}
 
 			if len(restored) > 0 {
@@ -40,7 +42,7 @@ func newPullCmd() *cobra.Command {
 				}
 				printf(cmd, "\033[0m:\n")
 				for _, file := range restored {
-					printf(cmd, "      ✨ \033[36m%s\033[0m\n", file)
+					printf(cmd, "      ✨ \033[36m%s\033[0m\n", file.RelativePath)
 				}
 				printf(cmd, "\n   🎉 Your dotfiles are synced and ready!\n")
 			} else {

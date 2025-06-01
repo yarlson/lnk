@@ -1,11 +1,12 @@
 package cmd
 
 import (
-	"fmt"
+	"context"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"github.com/yarlson/lnk/internal/core"
+
+	"github.com/yarlson/lnk/internal/service"
 )
 
 func newAddCmd() *cobra.Command {
@@ -19,24 +20,27 @@ func newAddCmd() *cobra.Command {
 			filePath := args[0]
 			host, _ := cmd.Flags().GetString("host")
 
-			var lnk *core.Lnk
-			if host != "" {
-				lnk = core.NewLnkWithHost(host)
-			} else {
-				lnk = core.NewLnk()
+			// Create service instance
+			lnkService, err := service.New()
+			if err != nil {
+				return wrapServiceError("initialize lnk service", err)
 			}
 
-			if err := lnk.Add(filePath); err != nil {
-				return fmt.Errorf("failed to add file: %w", err)
+			// Add file using service layer
+			ctx := context.Background()
+			managedFile, err := lnkService.AddFile(ctx, filePath, host)
+			if err != nil {
+				return formatError(err)
 			}
 
+			// Display success message
 			basename := filepath.Base(filePath)
 			if host != "" {
 				printf(cmd, "✨ \033[1mAdded %s to lnk (host: %s)\033[0m\n", basename, host)
-				printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s.lnk/%s\033[0m\n", filePath, host, filePath)
+				printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s.lnk/%s\033[0m\n", managedFile.OriginalPath, host, managedFile.RelativePath)
 			} else {
 				printf(cmd, "✨ \033[1mAdded %s to lnk\033[0m\n", basename)
-				printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s\033[0m\n", filePath, filePath)
+				printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s\033[0m\n", managedFile.OriginalPath, managedFile.RelativePath)
 			}
 			printf(cmd, "   📝 Use \033[1mlnk push\033[0m to sync to remote\n")
 			return nil

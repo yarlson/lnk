@@ -1,11 +1,12 @@
 package cmd
 
 import (
-	"fmt"
+	"context"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"github.com/yarlson/lnk/internal/core"
+
+	"github.com/yarlson/lnk/internal/service"
 )
 
 func newRemoveCmd() *cobra.Command {
@@ -19,15 +20,16 @@ func newRemoveCmd() *cobra.Command {
 			filePath := args[0]
 			host, _ := cmd.Flags().GetString("host")
 
-			var lnk *core.Lnk
-			if host != "" {
-				lnk = core.NewLnkWithHost(host)
-			} else {
-				lnk = core.NewLnk()
+			// Create service instance
+			lnkService, err := service.New()
+			if err != nil {
+				return wrapServiceError("initialize lnk service", err)
 			}
 
-			if err := lnk.Remove(filePath); err != nil {
-				return fmt.Errorf("failed to remove file: %w", err)
+			// Remove the file using the service
+			ctx := context.Background()
+			if err := lnkService.RemoveFile(ctx, filePath, host); err != nil {
+				return formatError(err)
 			}
 
 			basename := filepath.Base(filePath)

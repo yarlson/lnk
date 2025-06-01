@@ -32,8 +32,9 @@ Supports both common configurations and host-specific setups.
   lnk push "setup complete"        # Sync to remote
 
 🎯 Simple, fast, Git-native, and multi-host ready.`,
-		SilenceUsage: true,
-		Version:      fmt.Sprintf("%s (built %s)", version, buildTime),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Version:       fmt.Sprintf("%s (built %s)", version, buildTime),
 	}
 
 	// Add subcommands
@@ -57,7 +58,9 @@ func SetVersion(v, bt string) {
 func Execute() {
 	rootCmd := NewRootCommand()
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		// Format the error nicely for the user
+		formattedErr := formatError(err)
+		fmt.Fprintln(os.Stderr, formattedErr)
 		os.Exit(1)
 	}
 }
