@@ -68,7 +68,7 @@ func listCommonConfig(cmd *cobra.Command) error {
 }
 
 func listHostConfig(cmd *cobra.Command, host string) error {
-	lnk := core.NewLnkWithHost(host)
+	lnk := core.NewLnk(core.WithHost(host))
 	managedItems, err := lnk.List()
 	if err != nil {
 		return fmt.Errorf("failed to list managed items for host %s: %w", host, err)
@@ -127,7 +127,7 @@ func listAllConfigs(cmd *cobra.Command) error {
 	for _, host := range hosts {
 		printf(cmd, "\n🖥️  \033[1mHost: %s\033[0m", host)
 
-		hostLnk := core.NewLnkWithHost(host)
+		hostLnk := core.NewLnk(core.WithHost(host))
 		hostItems, err := hostLnk.List()
 		if err != nil {
 			printf(cmd, " \033[31m(error: %v)\033[0m\n", err)

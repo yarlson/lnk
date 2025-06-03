@@ -19,26 +19,30 @@ type Lnk struct {
 	fs       *fs.FileSystem
 }
 
-// NewLnk creates a new Lnk instance for common configuration
-func NewLnk() *Lnk {
-	repoPath := getRepoPath()
-	return &Lnk{
-		repoPath: repoPath,
-		host:     "", // Empty host means common configuration
-		git:      git.New(repoPath),
-		fs:       fs.New(),
+type Option func(*Lnk)
+
+// WithHost sets the host for host-specific configuration
+func WithHost(host string) Option {
+	return func(l *Lnk) {
+		l.host = host
 	}
 }
 
-// NewLnkWithHost creates a new Lnk instance for host-specific configuration
-func NewLnkWithHost(host string) *Lnk {
+// NewLnk creates a new Lnk instance with optional configuration
+func NewLnk(opts ...Option) *Lnk {
 	repoPath := getRepoPath()
-	return &Lnk{
+	lnk := &Lnk{
 		repoPath: repoPath,
-		host:     host,
+		host:     "",
 		git:      git.New(repoPath),
 		fs:       fs.New(),
 	}
+
+	for _, opt := range opts {
+		opt(lnk)
+	}
+
+	return lnk
 }
 
 // GetCurrentHostname returns the current system hostname

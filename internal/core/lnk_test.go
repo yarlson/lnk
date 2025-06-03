@@ -592,7 +592,7 @@ func (suite *CoreTestSuite) TestMultihostFileOperations() {
 	suite.Require().NoError(err)
 
 	// Add file to host-specific configuration
-	hostLnk := NewLnkWithHost("workstation")
+	hostLnk := NewLnk(WithHost("workstation"))
 	err = hostLnk.Add(testFile2)
 	suite.Require().NoError(err)
 
@@ -661,7 +661,7 @@ func (suite *CoreTestSuite) TestMultihostSymlinkRestoration() {
 	suite.Require().NoError(err)
 
 	// Create files directly in host-specific storage (simulating a pull)
-	hostLnk := NewLnkWithHost("testhost")
+	hostLnk := NewLnk(WithHost("testhost"))
 
 	// Ensure host storage directory exists
 	hostStoragePath := hostLnk.getHostStoragePath()
@@ -729,7 +729,7 @@ func (suite *CoreTestSuite) TestMultihostIsolation() {
 	suite.Require().NoError(err)
 
 	// Add to host-specific
-	hostLnk := NewLnkWithHost("work")
+	hostLnk := NewLnk(WithHost("work"))
 	err = hostLnk.Add(testFile)
 	suite.Require().NoError(err)
 

@@ -19,12 +19,7 @@ func newRemoveCmd() *cobra.Command {
 			filePath := args[0]
 			host, _ := cmd.Flags().GetString("host")
 
-			var lnk *core.Lnk
-			if host != "" {
-				lnk = core.NewLnkWithHost(host)
-			} else {
-				lnk = core.NewLnk()
-			}
+			lnk := core.NewLnk(core.WithHost(host))
 
 			if err := lnk.Remove(filePath); err != nil {
 				return fmt.Errorf("failed to remove file: %w", err)

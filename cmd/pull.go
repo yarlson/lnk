@@ -16,12 +16,7 @@ func newPullCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, _ := cmd.Flags().GetString("host")
 
-			var lnk *core.Lnk
-			if host != "" {
-				lnk = core.NewLnkWithHost(host)
-			} else {
-				lnk = core.NewLnk()
-			}
+			lnk := core.NewLnk(core.WithHost(host))
 
 			restored, err := lnk.Pull()
 			if err != nil {
