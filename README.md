@@ -6,7 +6,7 @@ Lnk makes managing your dotfiles straightforward, no tedious setups, no complex 
 
 Why bother with Lnk instead of plain old Git or other dotfile managers? Unlike traditional methods, Lnk automates the boring parts: safely relocating files, handling host-specific setups, and even running your custom bootstrap scripts automatically. This means fewer manual steps and less chance of accidentally overwriting something important.
 
-With Lnk, your dotfiles setup stays organized and effortlessly portable, letting you spend more time doing real work—not wrestling with configuration files.
+With Lnk, your dotfiles setup stays organized and effortlessly portable, letting you spend more time doing real work, not wrestling with configuration files.
 
 
 ```bash
