@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -626,6 +627,55 @@ func (l *Lnk) writeManagedItems(items []string) error {
 	err := os.WriteFile(lnkFile, []byte(content), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write .lnk file: %w", err)
+	}
+
+	return nil
+}
+
+// FindBootstrapScript searches for a bootstrap script in the repository
+func (l *Lnk) FindBootstrapScript() (string, error) {
+	// Check if repository is initialized
+	if !l.git.IsGitRepository() {
+		return "", fmt.Errorf("❌ Lnk repository not initialized\n   💡 Run \033[1mlnk init\033[0m first")
+	}
+
+	// Look for bootstrap.sh - simple, opinionated choice
+	scriptPath := filepath.Join(l.repoPath, "bootstrap.sh")
+	if _, err := os.Stat(scriptPath); err == nil {
+		return "bootstrap.sh", nil
+	}
+
+	return "", nil // No bootstrap script found
+}
+
+// RunBootstrapScript executes the bootstrap script
+func (l *Lnk) RunBootstrapScript(scriptName string) error {
+	scriptPath := filepath.Join(l.repoPath, scriptName)
+
+	// Verify the script exists
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		return fmt.Errorf("❌ Bootstrap script not found: \033[31m%s\033[0m", scriptName)
+	}
+
+	// Make sure it's executable
+	if err := os.Chmod(scriptPath, 0755); err != nil {
+		return fmt.Errorf("❌ Failed to make bootstrap script executable: %w", err)
+	}
+
+	// Run with bash (since we only support bootstrap.sh)
+	cmd := exec.Command("bash", scriptPath)
+
+	// Set working directory to the repository
+	cmd.Dir = l.repoPath
+
+	// Connect to stdout/stderr for user to see output
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	// Run the script
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("❌ Bootstrap script failed with error: %w", err)
 	}
 
 	return nil

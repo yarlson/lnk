@@ -746,6 +746,177 @@ func (suite *CLITestSuite) TestMultihostErrorHandling() {
 	suite.Contains(output, "No files currently managed by lnk (host: nonexistent)")
 }
 
+func (suite *CLITestSuite) TestBootstrapCommand() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Test bootstrap command with no script
+	err = suite.runCommand("bootstrap")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "No bootstrap script found")
+	suite.Contains(output, "bootstrap.sh")
+	suite.stdout.Reset()
+
+	// Create a bootstrap script
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	bootstrapScript := filepath.Join(lnkDir, "bootstrap.sh")
+	scriptContent := `#!/bin/bash
+echo "Bootstrap script executed!"
+echo "Working directory: $(pwd)"
+touch bootstrap-ran.txt
+`
+	err = os.WriteFile(bootstrapScript, []byte(scriptContent), 0755)
+	suite.Require().NoError(err)
+
+	// Test bootstrap command with script
+	err = suite.runCommand("bootstrap")
+	suite.NoError(err)
+	output = suite.stdout.String()
+	suite.Contains(output, "Running bootstrap script")
+	suite.Contains(output, "bootstrap.sh")
+	suite.Contains(output, "Bootstrap completed successfully")
+
+	// Verify script actually ran
+	markerFile := filepath.Join(lnkDir, "bootstrap-ran.txt")
+	suite.FileExists(markerFile)
+}
+
+func (suite *CLITestSuite) TestInitWithBootstrap() {
+	// Create a temporary remote repository with bootstrap script
+	remoteDir := filepath.Join(suite.tempDir, "remote")
+	err := os.MkdirAll(remoteDir, 0755)
+	suite.Require().NoError(err)
+
+	// Initialize git repo in remote
+	cmd := exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Create a working repo to populate the remote
+	workingDir := filepath.Join(suite.tempDir, "working")
+	err = os.MkdirAll(workingDir, 0755)
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "clone", remoteDir, workingDir)
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Add a bootstrap script to the working repo
+	bootstrapScript := filepath.Join(workingDir, "bootstrap.sh")
+	scriptContent := `#!/bin/bash
+echo "Remote bootstrap script executed!"
+touch remote-bootstrap-ran.txt
+`
+	err = os.WriteFile(bootstrapScript, []byte(scriptContent), 0755)
+	suite.Require().NoError(err)
+
+	// Add a dummy config file
+	configFile := filepath.Join(workingDir, ".bashrc")
+	err = os.WriteFile(configFile, []byte("echo 'Hello from remote!'"), 0644)
+	suite.Require().NoError(err)
+
+	// Add .lnk file to track the config
+	lnkFile := filepath.Join(workingDir, ".lnk")
+	err = os.WriteFile(lnkFile, []byte(".bashrc\n"), 0644)
+	suite.Require().NoError(err)
+
+	// Commit and push to remote
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = workingDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "-c", "user.email=test@example.com", "-c", "user.name=Test User", "commit", "-m", "Add bootstrap and config")
+	cmd.Dir = workingDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "push", "origin", "master")
+	cmd.Dir = workingDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Now test init with remote and automatic bootstrap
+	err = suite.runCommand("init", "-r", remoteDir)
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Cloned from:")
+	suite.Contains(output, "Looking for bootstrap script")
+	suite.Contains(output, "Found bootstrap script:")
+	suite.Contains(output, "bootstrap.sh")
+	suite.Contains(output, "Running bootstrap script")
+	suite.Contains(output, "Bootstrap completed successfully")
+
+	// Verify bootstrap actually ran
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	markerFile := filepath.Join(lnkDir, "remote-bootstrap-ran.txt")
+	suite.FileExists(markerFile)
+}
+
+func (suite *CLITestSuite) TestInitWithBootstrapDisabled() {
+	// Create a temporary remote repository with bootstrap script
+	remoteDir := filepath.Join(suite.tempDir, "remote")
+	err := os.MkdirAll(remoteDir, 0755)
+	suite.Require().NoError(err)
+
+	// Initialize git repo in remote
+	cmd := exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Create a working repo to populate the remote
+	workingDir := filepath.Join(suite.tempDir, "working")
+	err = os.MkdirAll(workingDir, 0755)
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "clone", remoteDir, workingDir)
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Add a bootstrap script
+	bootstrapScript := filepath.Join(workingDir, "bootstrap.sh")
+	scriptContent := `#!/bin/bash
+echo "This should not run!"
+touch should-not-exist.txt
+`
+	err = os.WriteFile(bootstrapScript, []byte(scriptContent), 0755)
+	suite.Require().NoError(err)
+
+	// Commit and push
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = workingDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "-c", "user.email=test@example.com", "-c", "user.name=Test User", "commit", "-m", "Add bootstrap")
+	cmd.Dir = workingDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "push", "origin", "master")
+	cmd.Dir = workingDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Test init with --no-bootstrap flag
+	err = suite.runCommand("init", "-r", remoteDir, "--no-bootstrap")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Cloned from:")
+	suite.NotContains(output, "Looking for bootstrap script")
+	suite.NotContains(output, "Running bootstrap script")
+
+	// Verify bootstrap did NOT run
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	markerFile := filepath.Join(lnkDir, "should-not-exist.txt")
+	suite.NoFileExists(markerFile)
+}
+
 func TestCLISuite(t *testing.T) {
 	suite.Run(t, new(CLITestSuite))
 }

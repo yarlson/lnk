@@ -24,12 +24,17 @@ Supports both common configurations and host-specific setups.
 
 ✨ Examples:
   lnk init                         # Fresh start
-  lnk init -r <repo-url>           # Clone existing dotfiles
+  lnk init -r <repo-url>           # Clone existing dotfiles (runs bootstrap automatically)
   lnk add ~/.vimrc ~/.bashrc       # Start managing common files
   lnk add --host work ~/.ssh/config # Manage host-specific files
   lnk list --all                  # Show all configurations
   lnk pull --host work             # Pull host-specific changes
   lnk push "setup complete"        # Sync to remote
+  lnk bootstrap                    # Run bootstrap script manually
+
+🚀 Bootstrap Support:
+  Automatically runs bootstrap.sh when cloning a repository.
+  Use --no-bootstrap to disable.
 
 🎯 Simple, fast, Git-native, and multi-host ready.`,
 		SilenceUsage:  true,
@@ -45,6 +50,7 @@ Supports both common configurations and host-specific setups.
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newPushCmd())
 	rootCmd.AddCommand(newPullCmd())
+	rootCmd.AddCommand(newBootstrapCmd())
 
 	return rootCmd
 }
