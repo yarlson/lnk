@@ -1,24 +1,23 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 	"github.com/yarlson/lnk/internal/core"
 )
 
 func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "init",
-		Short:        "🎯 Initialize a new lnk repository",
-		Long:         "Creates the lnk directory and initializes a Git repository for managing dotfiles.",
-		SilenceUsage: true,
+		Use:           "init",
+		Short:         "🎯 Initialize a new lnk repository",
+		Long:          "Creates the lnk directory and initializes a Git repository for managing dotfiles.",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			remote, _ := cmd.Flags().GetString("remote")
 
 			lnk := core.NewLnk()
 			if err := lnk.InitWithRemote(remote); err != nil {
-				return fmt.Errorf("failed to initialize lnk: %w", err)
+				return err
 			}
 
 			if remote != "" {

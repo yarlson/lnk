@@ -157,7 +157,7 @@ func (suite *CLITestSuite) TestStatusCommand() {
 	// Test status without remote - should fail
 	err = suite.runCommand("status")
 	suite.Error(err)
-	suite.Contains(err.Error(), "no remote configured")
+	suite.Contains(err.Error(), "No remote repository is configured")
 }
 
 func (suite *CLITestSuite) TestListCommand() {
@@ -247,7 +247,7 @@ func (suite *CLITestSuite) TestErrorHandling() {
 			name:        "add nonexistent file",
 			args:        []string{"add", "/nonexistent/file"},
 			wantErr:     true,
-			errContains: "File does not exist",
+			errContains: "File or directory not found",
 		},
 		{
 			name:        "status without init",

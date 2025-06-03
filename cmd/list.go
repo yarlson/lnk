@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,10 +11,11 @@ import (
 
 func newListCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "list",
-		Short:        "📋 List files managed by lnk",
-		Long:         "Display all files and directories currently managed by lnk.",
-		SilenceUsage: true,
+		Use:           "list",
+		Short:         "📋 List files managed by lnk",
+		Long:          "Display all files and directories currently managed by lnk.",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, _ := cmd.Flags().GetString("host")
 			all, _ := cmd.Flags().GetBool("all")
@@ -44,7 +44,7 @@ func listCommonConfig(cmd *cobra.Command) error {
 	lnk := core.NewLnk()
 	managedItems, err := lnk.List()
 	if err != nil {
-		return fmt.Errorf("failed to list managed items: %w", err)
+		return err
 	}
 
 	if len(managedItems) == 0 {
@@ -71,7 +71,7 @@ func listHostConfig(cmd *cobra.Command, host string) error {
 	lnk := core.NewLnk(core.WithHost(host))
 	managedItems, err := lnk.List()
 	if err != nil {
-		return fmt.Errorf("failed to list managed items for host %s: %w", host, err)
+		return err
 	}
 
 	if len(managedItems) == 0 {
@@ -101,7 +101,7 @@ func listAllConfigs(cmd *cobra.Command) error {
 	lnk := core.NewLnk()
 	commonItems, err := lnk.List()
 	if err != nil {
-		return fmt.Errorf("failed to list common managed items: %w", err)
+		return err
 	}
 
 	printf(cmd, "🌐 \033[1mCommon configuration\033[0m (\033[36m%d item", len(commonItems))
@@ -121,7 +121,7 @@ func listAllConfigs(cmd *cobra.Command) error {
 	// Find all host-specific configurations
 	hosts, err := findHostConfigs()
 	if err != nil {
-		return fmt.Errorf("failed to find host configurations: %w", err)
+		return err
 	}
 
 	for _, host := range hosts {
@@ -163,7 +163,7 @@ func findHostConfigs() ([]string, error) {
 
 	entries, err := os.ReadDir(repoPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read repository directory: %w", err)
+		return nil, err
 	}
 
 	var hosts []string

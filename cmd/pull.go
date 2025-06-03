@@ -1,18 +1,17 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 	"github.com/yarlson/lnk/internal/core"
 )
 
 func newPullCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "pull",
-		Short:        "⬇️ Pull changes from remote and restore symlinks",
-		Long:         "Fetches changes from remote repository and automatically restores symlinks for all managed files.",
-		SilenceUsage: true,
+		Use:           "pull",
+		Short:         "⬇️ Pull changes from remote and restore symlinks",
+		Long:          "Fetches changes from remote repository and automatically restores symlinks for all managed files.",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, _ := cmd.Flags().GetString("host")
 
@@ -20,7 +19,7 @@ func newPullCmd() *cobra.Command {
 
 			restored, err := lnk.Pull()
 			if err != nil {
-				return fmt.Errorf("failed to pull changes: %w", err)
+				return err
 			}
 
 			if len(restored) > 0 {

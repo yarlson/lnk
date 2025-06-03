@@ -275,7 +275,7 @@ func (suite *CoreTestSuite) TestErrorConditions() {
 
 	err = suite.lnk.Add("/nonexistent/file")
 	suite.Error(err)
-	suite.Contains(err.Error(), "File does not exist")
+	suite.Contains(err.Error(), "File or directory not found")
 
 	// Test remove unmanaged file
 	testFile := filepath.Join(suite.tempDir, ".regularfile")
@@ -289,7 +289,7 @@ func (suite *CoreTestSuite) TestErrorConditions() {
 	// Test status without remote
 	_, err = suite.lnk.Status()
 	suite.Error(err)
-	suite.Contains(err.Error(), "no remote configured")
+	suite.Contains(err.Error(), "No remote repository is configured")
 }
 
 // Test git operations

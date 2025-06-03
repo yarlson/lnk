@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -10,11 +9,12 @@ import (
 
 func newAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "add <file>",
-		Short:        "✨ Add a file to lnk management",
-		Long:         "Moves a file to the lnk repository and creates a symlink in its place.",
-		Args:         cobra.ExactArgs(1),
-		SilenceUsage: true,
+		Use:           "add <file>",
+		Short:         "✨ Add a file to lnk management",
+		Long:          "Moves a file to the lnk repository and creates a symlink in its place.",
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			filePath := args[0]
 			host, _ := cmd.Flags().GetString("host")
@@ -22,7 +22,7 @@ func newAddCmd() *cobra.Command {
 			lnk := core.NewLnk(core.WithHost(host))
 
 			if err := lnk.Add(filePath); err != nil {
-				return fmt.Errorf("failed to add file: %w", err)
+				return err
 			}
 
 			basename := filepath.Base(filePath)

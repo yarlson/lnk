@@ -141,27 +141,17 @@ func (l *Lnk) InitWithRemote(remoteURL string) error {
 	}
 
 	// No existing repository, initialize Git repository
-	if err := l.git.Init(); err != nil {
-		return fmt.Errorf("failed to initialize git repository: %w", err)
-	}
-
-	return nil
+	return l.git.Init()
 }
 
 // Clone clones a repository from the given URL
 func (l *Lnk) Clone(url string) error {
-	if err := l.git.Clone(url); err != nil {
-		return fmt.Errorf("failed to clone repository: %w", err)
-	}
-	return nil
+	return l.git.Clone(url)
 }
 
 // AddRemote adds a remote to the repository
 func (l *Lnk) AddRemote(name, url string) error {
-	if err := l.git.AddRemote(name, url); err != nil {
-		return fmt.Errorf("failed to add remote %s: %w", name, err)
-	}
-	return nil
+	return l.git.AddRemote(name, url)
 }
 
 // Add moves a file or directory to the repository and creates a symlink
@@ -211,36 +201,22 @@ func (l *Lnk) Add(filePath string) error {
 	}
 
 	// Move to repository (handles both files and directories)
-	if info.IsDir() {
-		if err := l.fs.MoveDirectory(absPath, destPath); err != nil {
-			return fmt.Errorf("failed to move directory to repository: %w", err)
-		}
-	} else {
-		if err := l.fs.MoveFile(absPath, destPath); err != nil {
-			return fmt.Errorf("failed to move file to repository: %w", err)
-		}
+	if err := l.fs.Move(absPath, destPath, info); err != nil {
+		return err
 	}
 
 	// Create symlink
 	if err := l.fs.CreateSymlink(destPath, absPath); err != nil {
 		// Try to restore the original if symlink creation fails
-		if info.IsDir() {
-			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
-		} else {
-			_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
-		}
-		return fmt.Errorf("failed to create symlink: %w", err)
+		_ = l.fs.Move(destPath, absPath, info)
+		return err
 	}
 
 	// Add to .lnk tracking file using relative path
 	if err := l.addManagedItem(relativePath); err != nil {
 		// Try to restore the original state if tracking fails
-		_ = os.Remove(absPath) // Ignore error in cleanup
-		if info.IsDir() {
-			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
-		} else {
-			_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
-		}
+		_ = os.Remove(absPath)
+		_ = l.fs.Move(destPath, absPath, info)
 		return fmt.Errorf("failed to update tracking file: %w", err)
 	}
 
@@ -252,41 +228,29 @@ func (l *Lnk) Add(filePath string) error {
 	}
 	if err := l.git.Add(gitPath); err != nil {
 		// Try to restore the original state if git add fails
-		_ = os.Remove(absPath)                // Ignore error in cleanup
-		_ = l.removeManagedItem(relativePath) // Ignore error in cleanup
-		if info.IsDir() {
-			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
-		} else {
-			_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
-		}
-		return fmt.Errorf("failed to add item to git: %w", err)
+		_ = os.Remove(absPath)
+		_ = l.removeManagedItem(relativePath)
+		_ = l.fs.Move(destPath, absPath, info)
+		return err
 	}
 
 	// Add .lnk file to the same commit
 	if err := l.git.Add(l.getLnkFileName()); err != nil {
 		// Try to restore the original state if git add fails
-		_ = os.Remove(absPath)                // Ignore error in cleanup
-		_ = l.removeManagedItem(relativePath) // Ignore error in cleanup
-		if info.IsDir() {
-			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
-		} else {
-			_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
-		}
-		return fmt.Errorf("failed to add .lnk file to git: %w", err)
+		_ = os.Remove(absPath)
+		_ = l.removeManagedItem(relativePath)
+		_ = l.fs.Move(destPath, absPath, info)
+		return err
 	}
 
 	// Commit both changes together
 	basename := filepath.Base(relativePath)
 	if err := l.git.Commit(fmt.Sprintf("lnk: added %s", basename)); err != nil {
 		// Try to restore the original state if commit fails
-		_ = os.Remove(absPath)                // Ignore error in cleanup
-		_ = l.removeManagedItem(relativePath) // Ignore error in cleanup
-		if info.IsDir() {
-			_ = l.fs.MoveDirectory(destPath, absPath) // Ignore error in cleanup
-		} else {
-			_ = l.fs.MoveFile(destPath, absPath) // Ignore error in cleanup
-		}
-		return fmt.Errorf("failed to commit changes: %w", err)
+		_ = os.Remove(absPath)
+		_ = l.removeManagedItem(relativePath)
+		_ = l.fs.Move(destPath, absPath, info)
+		return err
 	}
 
 	return nil
@@ -361,29 +325,23 @@ func (l *Lnk) Remove(filePath string) error {
 		gitPath = filepath.Join(l.host+".lnk", relativePath)
 	}
 	if err := l.git.Remove(gitPath); err != nil {
-		return fmt.Errorf("failed to remove from git: %w", err)
+		return err
 	}
 
 	// Add .lnk file to the same commit
 	if err := l.git.Add(l.getLnkFileName()); err != nil {
-		return fmt.Errorf("failed to add .lnk file to git: %w", err)
+		return err
 	}
 
 	// Commit both changes together
 	basename := filepath.Base(relativePath)
 	if err := l.git.Commit(fmt.Sprintf("lnk: removed %s", basename)); err != nil {
-		return fmt.Errorf("failed to commit changes: %w", err)
+		return err
 	}
 
 	// Move back from repository (handles both files and directories)
-	if info.IsDir() {
-		if err := l.fs.MoveDirectory(target, absPath); err != nil {
-			return fmt.Errorf("failed to restore directory: %w", err)
-		}
-	} else {
-		if err := l.fs.MoveFile(target, absPath); err != nil {
-			return fmt.Errorf("failed to restore file: %w", err)
-		}
+	if err := l.fs.Move(target, absPath, info); err != nil {
+		return err
 	}
 
 	return nil
@@ -411,7 +369,7 @@ func (l *Lnk) Status() (*StatusInfo, error) {
 
 	gitStatus, err := l.git.GetStatus()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get repository status: %w", err)
+		return nil, err
 	}
 
 	return &StatusInfo{
@@ -432,28 +390,24 @@ func (l *Lnk) Push(message string) error {
 	// Check if there are any changes
 	hasChanges, err := l.git.HasChanges()
 	if err != nil {
-		return fmt.Errorf("failed to check for changes: %w", err)
+		return err
 	}
 
 	if hasChanges {
 		// Stage all changes
 		if err := l.git.AddAll(); err != nil {
-			return fmt.Errorf("failed to stage changes: %w", err)
+			return err
 		}
 
 		// Create a sync commit
 		if err := l.git.Commit(message); err != nil {
-			return fmt.Errorf("failed to commit changes: %w", err)
+			return err
 		}
 	}
 
 	// Push to remote (this will be a no-op in tests since we don't have real remotes)
 	// In real usage, this would push to the actual remote repository
-	if err := l.git.Push(); err != nil {
-		return fmt.Errorf("failed to push to remote: %w", err)
-	}
-
-	return nil
+	return l.git.Push()
 }
 
 // Pull fetches changes from remote and restores symlinks as needed
@@ -465,7 +419,7 @@ func (l *Lnk) Pull() ([]string, error) {
 
 	// Pull changes from remote (this will be a no-op in tests since we don't have real remotes)
 	if err := l.git.Pull(); err != nil {
-		return nil, fmt.Errorf("failed to pull from remote: %w", err)
+		return nil, err
 	}
 
 	// Find all managed files in the repository and restore symlinks
@@ -541,7 +495,7 @@ func (l *Lnk) RestoreSymlinks() ([]string, error) {
 
 		// Create symlink
 		if err := l.fs.CreateSymlink(repoItem, symlinkPath); err != nil {
-			return nil, fmt.Errorf("failed to create symlink for %s: %w", relativePath, err)
+			return nil, err
 		}
 
 		restored = append(restored, relativePath)

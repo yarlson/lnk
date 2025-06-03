@@ -1,23 +1,22 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 	"github.com/yarlson/lnk/internal/core"
 )
 
 func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:          "status",
-		Short:        "📊 Show repository sync status",
-		Long:         "Display how many commits ahead/behind the local repository is relative to the remote and check for uncommitted changes.",
-		SilenceUsage: true,
+		Use:           "status",
+		Short:         "📊 Show repository sync status",
+		Long:          "Display how many commits ahead/behind the local repository is relative to the remote and check for uncommitted changes.",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			lnk := core.NewLnk()
 			status, err := lnk.Status()
 			if err != nil {
-				return fmt.Errorf("failed to get status: %w", err)
+				return err
 			}
 
 			if status.Dirty {

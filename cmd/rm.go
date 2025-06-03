@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -10,11 +9,12 @@ import (
 
 func newRemoveCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "rm <file>",
-		Short:        "🗑️ Remove a file from lnk management",
-		Long:         "Removes a symlink and restores the original file from the lnk repository.",
-		Args:         cobra.ExactArgs(1),
-		SilenceUsage: true,
+		Use:           "rm <file>",
+		Short:         "🗑️ Remove a file from lnk management",
+		Long:          "Removes a symlink and restores the original file from the lnk repository.",
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			filePath := args[0]
 			host, _ := cmd.Flags().GetString("host")
@@ -22,7 +22,7 @@ func newRemoveCmd() *cobra.Command {
 			lnk := core.NewLnk(core.WithHost(host))
 
 			if err := lnk.Remove(filePath); err != nil {
-				return fmt.Errorf("failed to remove file: %w", err)
+				return err
 			}
 
 			basename := filepath.Base(filePath)

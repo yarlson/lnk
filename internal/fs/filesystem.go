@@ -1,7 +1,6 @@
 package fs
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,18 +16,19 @@ func New() *FileSystem {
 
 // ValidateFileForAdd validates that a file or directory can be added to lnk
 func (fs *FileSystem) ValidateFileForAdd(filePath string) error {
-	// Check if file exists
+	// Check if file exists and get its info
 	info, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("❌ File does not exist: \033[31m%s\033[0m", filePath)
+			return &FileNotExistsError{Path: filePath, Err: err}
 		}
-		return fmt.Errorf("❌ Failed to check file: %w", err)
+
+		return &FileCheckError{Err: err}
 	}
 
 	// Allow both regular files and directories
 	if !info.Mode().IsRegular() && !info.IsDir() {
-		return fmt.Errorf("❌ Only regular files and directories are supported: \033[31m%s\033[0m", filePath)
+		return &UnsupportedFileTypeError{Path: filePath}
 	}
 
 	return nil
@@ -36,98 +36,79 @@ func (fs *FileSystem) ValidateFileForAdd(filePath string) error {
 
 // ValidateSymlinkForRemove validates that a symlink can be removed from lnk
 func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error {
-	// Check if file exists
+	// Check if file exists and is a symlink
 	info, err := os.Lstat(filePath) // Use Lstat to not follow symlinks
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("❌ File does not exist: \033[31m%s\033[0m", filePath)
+			return &FileNotExistsError{Path: filePath, Err: err}
 		}
-		return fmt.Errorf("❌ Failed to check file: %w", err)
+
+		return &FileCheckError{Err: err}
 	}
 
-	// Check if it's a symlink
 	if info.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("❌ File is not managed by lnk: \033[31m%s\033[0m\n   💡 Use \033[1mlnk add\033[0m to manage this file first", filePath)
+		return &NotManagedByLnkError{Path: filePath}
 	}
 
-	// Check if symlink points to the repository
+	// Get symlink target and resolve to absolute path
 	target, err := os.Readlink(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to read symlink: %w", err)
+		return &SymlinkReadError{Err: err}
 	}
 
-	// Convert relative path to absolute if needed
 	if !filepath.IsAbs(target) {
 		target = filepath.Join(filepath.Dir(filePath), target)
 	}
 
-	// Clean the path to resolve any .. or . components
+	// Clean paths and check if target is inside the repository
 	target = filepath.Clean(target)
 	repoPath = filepath.Clean(repoPath)
 
-	// Check if target is inside the repository
 	if !strings.HasPrefix(target, repoPath+string(filepath.Separator)) && target != repoPath {
-		return fmt.Errorf("❌ File is not managed by lnk: \033[31m%s\033[0m", filePath)
+		return &NotManagedByLnkError{Path: filePath}
 	}
 
 	return nil
+}
+
+// Move moves a file or directory from source to destination based on the file info
+func (fs *FileSystem) Move(src, dst string, info os.FileInfo) error {
+	if info.IsDir() {
+		return fs.MoveDirectory(src, dst)
+	}
+	return fs.MoveFile(src, dst)
 }
 
 // MoveFile moves a file from source to destination
 func (fs *FileSystem) MoveFile(src, dst string) error {
 	// Ensure destination directory exists
-	dstDir := filepath.Dir(dst)
-	if err := os.MkdirAll(dstDir, 0755); err != nil {
-		return fmt.Errorf("failed to create destination directory: %w", err)
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return &DirectoryCreationError{Operation: "destination directory", Err: err}
 	}
 
 	// Move the file
-	if err := os.Rename(src, dst); err != nil {
-		return fmt.Errorf("failed to move file from %s to %s: %w", src, dst, err)
-	}
-
-	return nil
+	return os.Rename(src, dst)
 }
 
 // CreateSymlink creates a relative symlink from target to linkPath
 func (fs *FileSystem) CreateSymlink(target, linkPath string) error {
 	// Calculate relative path from linkPath to target
-	linkDir := filepath.Dir(linkPath)
-	relTarget, err := filepath.Rel(linkDir, target)
+	relTarget, err := filepath.Rel(filepath.Dir(linkPath), target)
 	if err != nil {
-		return fmt.Errorf("failed to calculate relative path: %w", err)
+		return &RelativePathCalculationError{Err: err}
 	}
 
 	// Create the symlink
-	if err := os.Symlink(relTarget, linkPath); err != nil {
-		return fmt.Errorf("failed to create symlink: %w", err)
-	}
-
-	return nil
+	return os.Symlink(relTarget, linkPath)
 }
 
 // MoveDirectory moves a directory from source to destination recursively
 func (fs *FileSystem) MoveDirectory(src, dst string) error {
-	// Check if source is a directory
-	info, err := os.Stat(src)
-	if err != nil {
-		return fmt.Errorf("failed to stat source: %w", err)
-	}
-
-	if !info.IsDir() {
-		return fmt.Errorf("source is not a directory: %s", src)
-	}
-
 	// Ensure destination parent directory exists
-	dstParent := filepath.Dir(dst)
-	if err := os.MkdirAll(dstParent, 0755); err != nil {
-		return fmt.Errorf("failed to create destination parent directory: %w", err)
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return &DirectoryCreationError{Operation: "destination parent directory", Err: err}
 	}
 
-	// Use os.Rename which works for directories
-	if err := os.Rename(src, dst); err != nil {
-		return fmt.Errorf("failed to move directory from %s to %s: %w", src, dst, err)
-	}
-
-	return nil
+	// Move the directory
+	return os.Rename(src, dst)
 }
