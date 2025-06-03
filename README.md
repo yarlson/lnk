@@ -2,7 +2,12 @@
 
 **Git-native dotfiles management that doesn't suck.**
 
-Move your dotfiles to `~/.config/lnk`, symlink them back, and use Git like normal. Supports both common configurations and host-specific setups. Automatically runs bootstrap scripts to set up your environment.
+Lnk makes managing your dotfiles straightforward, no tedious setups, no complex configurations. Just tell Lnk what files you want tracked, and it’ll automatically move them into a tidy Git repository under `~/.config/lnk`. It then creates clean, portable symlinks back to their original locations. Easy.
+
+Why bother with Lnk instead of plain old Git or other dotfile managers? Unlike traditional methods, Lnk automates the boring parts: safely relocating files, handling host-specific setups, and even running your custom bootstrap scripts automatically. This means fewer manual steps and less chance of accidentally overwriting something important.
+
+With Lnk, your dotfiles setup stays organized and effortlessly portable, letting you spend more time doing real work—not wrestling with configuration files.
+
 
 ```bash
 lnk init -r git@github.com:user/dotfiles.git  # Clones & runs bootstrap automatically
