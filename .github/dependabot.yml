@@ -1,0 +1,17 @@
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/optimizing-pr-creation-version-updates#setting-up-a-cooldown-period-for-dependency-updates
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference#groups--
+    groups:
+      actions:
+        # Combine all images of last week
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
