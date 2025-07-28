@@ -18,7 +18,7 @@ INSTALL_DIR="/usr/local/bin"
 BINARY_NAME="lnk"
 
 # Fallback version if redirect fails
-FALLBACK_VERSION="v0.0.2"
+FALLBACK_VERSION="v0.3.0"
 
 # Detect OS and architecture
 detect_platform() {
@@ -51,28 +51,28 @@ detect_platform() {
 # Get latest version by following redirect
 get_latest_version() {
     echo -e "${BLUE}Getting latest release version...${NC}" >&2
-    
+
     # Get redirect location from releases/latest
     local redirect_url
     redirect_url=$(curl -s -I "https://github.com/${REPO}/releases/latest" | grep -i "^location:" | sed 's/\r$//' | cut -d' ' -f2-)
-    
+
     if [ -z "$redirect_url" ]; then
         echo -e "${YELLOW}⚠ Could not get redirect URL, using fallback version ${FALLBACK_VERSION}${NC}" >&2
         echo "$FALLBACK_VERSION"
         return 0
     fi
-    
+
     # Extract version from redirect URL (format: https://github.com/user/repo/releases/tag/v1.2.3)
     local version
     version=$(echo "$redirect_url" | sed -E 's|.*/releases/tag/([^/]*)\s*$|\1|')
-    
+
     if [ -z "$version" ] || [ "$version" = "$redirect_url" ]; then
         echo -e "${YELLOW}⚠ Could not parse version from redirect URL: $redirect_url${NC}" >&2
         echo -e "${YELLOW}Using fallback version ${FALLBACK_VERSION}${NC}" >&2
         echo "$FALLBACK_VERSION"
         return 0
     fi
-    
+
     echo "$version"
 }
 
@@ -91,25 +91,25 @@ get_version() {
 # Download and install
 install_lnk() {
     local platform version
-    
+
     echo -e "${BLUE}🔗 Installing lnk...${NC}"
-    
+
     platform=$(detect_platform)
     version=$(get_version "$1")
-    
+
     echo -e "${BLUE}Version: ${version}${NC}"
     echo -e "${BLUE}Platform: ${platform}${NC}"
-    
+
     # Download URL
     local filename="lnk_${platform}.tar.gz"
     local url="https://github.com/${REPO}/releases/download/${version}/${filename}"
-    
+
     echo -e "${BLUE}Downloading ${url}...${NC}"
-    
+
     # Create temporary directory
     local tmp_dir=$(mktemp -d)
     cd "$tmp_dir"
-    
+
     # Download the binary
     if ! curl -sL "$url" -o "$filename"; then
         echo -e "${RED}Error: Failed to download ${url}${NC}"
@@ -117,7 +117,7 @@ install_lnk() {
         echo -e "${YELLOW}Available releases: https://github.com/${REPO}/releases${NC}"
         exit 1
     fi
-    
+
     # Check if we got an HTML error page instead of the binary
     if file "$filename" 2>/dev/null | grep -q "HTML"; then
         echo -e "${RED}Error: Downloaded file appears to be an HTML page (404 error)${NC}"
@@ -125,30 +125,30 @@ install_lnk() {
         echo -e "${YELLOW}Available releases: https://github.com/${REPO}/releases${NC}"
         exit 1
     fi
-    
+
     # Extract the binary
     if ! tar -xzf "$filename"; then
         echo -e "${RED}Error: Failed to extract ${filename}${NC}"
         exit 1
     fi
-    
+
     # Make binary executable
     chmod +x "$BINARY_NAME"
-    
+
     # Install to system directory
     echo -e "${YELLOW}Installing to ${INSTALL_DIR} (requires sudo)...${NC}"
     if ! sudo mv "$BINARY_NAME" "$INSTALL_DIR/"; then
         echo -e "${RED}Error: Failed to install binary${NC}"
         exit 1
     fi
-    
+
     # Cleanup
     cd - > /dev/null
     rm -rf "$tmp_dir"
-    
+
     echo -e "${GREEN}✅ lnk installed successfully!${NC}"
     echo -e "${GREEN}Run 'lnk --help' to get started.${NC}"
-    
+
     # Test the installation
     if command -v lnk >/dev/null 2>&1; then
         echo -e "${GREEN}Installed version: $(lnk --version)${NC}"
@@ -177,4 +177,4 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
 fi
 
 # Run the installer
-install_lnk "$1" 
+install_lnk "$1"
