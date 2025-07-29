@@ -26,7 +26,6 @@ curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash
 
 ```bash
 # Homebrew (macOS/Linux)
-brew tap yarlson/lnk
 brew install lnk
 ```
 
