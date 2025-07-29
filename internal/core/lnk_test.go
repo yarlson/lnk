@@ -1090,6 +1090,254 @@ func (suite *CoreTestSuite) TestDetailedErrorMessages() {
 	suite.Contains(err.Error(), "already-managed.txt", "Error should include specific filename")
 }
 
+// Task 2.2: Directory Walking Logic Tests
+
+func (suite *CoreTestSuite) TestWalkDirectory() {
+	// Initialize lnk repository
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create nested directory structure
+	configDir := filepath.Join(suite.tempDir, ".config", "myapp")
+	err = os.MkdirAll(configDir, 0755)
+	suite.Require().NoError(err)
+
+	themeDir := filepath.Join(configDir, "themes")
+	err = os.MkdirAll(themeDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create files in different levels
+	file1 := filepath.Join(configDir, "config.json")
+	file2 := filepath.Join(configDir, "settings.json")
+	file3 := filepath.Join(themeDir, "dark.json")
+	file4 := filepath.Join(themeDir, "light.json")
+
+	suite.Require().NoError(os.WriteFile(file1, []byte("config"), 0644))
+	suite.Require().NoError(os.WriteFile(file2, []byte("settings"), 0644))
+	suite.Require().NoError(os.WriteFile(file3, []byte("dark theme"), 0644))
+	suite.Require().NoError(os.WriteFile(file4, []byte("light theme"), 0644))
+
+	// Call walkDirectory method (which doesn't exist yet)
+	files, err := suite.lnk.walkDirectory(configDir)
+	suite.Require().NoError(err, "walkDirectory should succeed")
+	
+	// Should find all 4 files
+	suite.Len(files, 4, "Should find all files in nested structure")
+	
+	// Check that all expected files are found (order may vary)
+	expectedFiles := []string{file1, file2, file3, file4}
+	for _, expectedFile := range expectedFiles {
+		suite.Contains(files, expectedFile, "Should include file %s", expectedFile)
+	}
+}
+
+func (suite *CoreTestSuite) TestWalkDirectoryIncludesHiddenFiles() {
+	// Initialize lnk repository
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create directory with hidden files and directories
+	testDir := filepath.Join(suite.tempDir, "test-hidden")
+	err = os.MkdirAll(testDir, 0755)
+	suite.Require().NoError(err)
+
+	hiddenDir := filepath.Join(testDir, ".hidden")
+	err = os.MkdirAll(hiddenDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create regular and hidden files
+	regularFile := filepath.Join(testDir, "regular.txt")
+	hiddenFile := filepath.Join(testDir, ".hidden-file")
+	hiddenDirFile := filepath.Join(hiddenDir, "file-in-hidden.txt")
+
+	suite.Require().NoError(os.WriteFile(regularFile, []byte("regular"), 0644))
+	suite.Require().NoError(os.WriteFile(hiddenFile, []byte("hidden"), 0644))
+	suite.Require().NoError(os.WriteFile(hiddenDirFile, []byte("in hidden dir"), 0644))
+
+	// Call walkDirectory method
+	files, err := suite.lnk.walkDirectory(testDir)
+	suite.Require().NoError(err, "walkDirectory should succeed with hidden files")
+	
+	// Should find all files including hidden ones
+	suite.Len(files, 3, "Should find all files including hidden ones")
+	suite.Contains(files, regularFile, "Should include regular file")
+	suite.Contains(files, hiddenFile, "Should include hidden file")
+	suite.Contains(files, hiddenDirFile, "Should include file in hidden directory")
+}
+
+func (suite *CoreTestSuite) TestWalkDirectorySymlinkHandling() {
+	// Initialize lnk repository
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create directory structure
+	testDir := filepath.Join(suite.tempDir, "test-symlinks")
+	err = os.MkdirAll(testDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create a regular file
+	regularFile := filepath.Join(testDir, "regular.txt")
+	suite.Require().NoError(os.WriteFile(regularFile, []byte("regular"), 0644))
+
+	// Create a symlink to the regular file
+	symlinkFile := filepath.Join(testDir, "link-to-regular.txt")
+	err = os.Symlink(regularFile, symlinkFile)
+	suite.Require().NoError(err)
+
+	// Call walkDirectory method
+	files, err := suite.lnk.walkDirectory(testDir)
+	suite.Require().NoError(err, "walkDirectory should handle symlinks")
+	
+	// Should include both regular file and properly handle symlink
+	// (exact behavior depends on implementation - could include symlink as file)
+	suite.GreaterOrEqual(len(files), 1, "Should find at least the regular file")
+	suite.Contains(files, regularFile, "Should include regular file")
+	
+	// The symlink handling behavior will be defined in implementation
+	// For now, we just ensure no errors occur
+}
+
+func (suite *CoreTestSuite) TestWalkDirectoryEmptyDirs() {
+	// Initialize lnk repository
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create directory structure with empty directories
+	testDir := filepath.Join(suite.tempDir, "test-empty")
+	err = os.MkdirAll(testDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create empty subdirectories
+	emptyDir1 := filepath.Join(testDir, "empty1")
+	emptyDir2 := filepath.Join(testDir, "empty2")
+	err = os.MkdirAll(emptyDir1, 0755)
+	suite.Require().NoError(err)
+	err = os.MkdirAll(emptyDir2, 0755)
+	suite.Require().NoError(err)
+
+	// Create one file in a non-empty directory
+	nonEmptyDir := filepath.Join(testDir, "non-empty")
+	err = os.MkdirAll(nonEmptyDir, 0755)
+	suite.Require().NoError(err)
+	
+	testFile := filepath.Join(nonEmptyDir, "test.txt")
+	suite.Require().NoError(os.WriteFile(testFile, []byte("content"), 0644))
+
+	// Call walkDirectory method
+	files, err := suite.lnk.walkDirectory(testDir)
+	suite.Require().NoError(err, "walkDirectory should skip empty directories")
+	
+	// Should only find the one file, not empty directories
+	suite.Len(files, 1, "Should only find files, not empty directories")
+	suite.Contains(files, testFile, "Should include the actual file")
+}
+
+// Task 2.3: Progress Indication System Tests
+
+func (suite *CoreTestSuite) TestProgressReporting() {
+	// Initialize lnk repository
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create directory with multiple files to test progress reporting
+	testDir := filepath.Join(suite.tempDir, "progress-test")
+	err = os.MkdirAll(testDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create 15 files to exceed threshold
+	expectedFiles := 15
+	for i := 0; i < expectedFiles; i++ {
+		file := filepath.Join(testDir, fmt.Sprintf("file%d.txt", i))
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("content %d", i)), 0644))
+	}
+
+	// Track progress calls
+	var progressCalls []struct {
+		Current     int
+		Total       int
+		CurrentFile string
+	}
+
+	progressCallback := func(current, total int, currentFile string) {
+		progressCalls = append(progressCalls, struct {
+			Current     int
+			Total       int
+			CurrentFile string
+		}{
+			Current:     current,
+			Total:       total,
+			CurrentFile: currentFile,
+		})
+	}
+
+	// Call AddRecursiveWithProgress method (which doesn't exist yet)
+	err = suite.lnk.AddRecursiveWithProgress([]string{testDir}, progressCallback)
+	suite.Require().NoError(err, "AddRecursiveWithProgress should succeed")
+
+	// Verify progress was reported
+	suite.Greater(len(progressCalls), 0, "Progress callback should be called")
+	suite.Equal(expectedFiles, len(progressCalls), "Should have progress calls for each file")
+
+	// Verify progress order and totals
+	for i, call := range progressCalls {
+		suite.Equal(i+1, call.Current, "Current count should increment")
+		suite.Equal(expectedFiles, call.Total, "Total should be consistent")
+		suite.NotEmpty(call.CurrentFile, "CurrentFile should be provided")
+	}
+}
+
+func (suite *CoreTestSuite) TestProgressThreshold() {
+	// Initialize lnk repository
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Test with few files (under threshold)
+	smallDir := filepath.Join(suite.tempDir, "small-test")
+	err = os.MkdirAll(smallDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create only 5 files (under 10 threshold)
+	for i := 0; i < 5; i++ {
+		file := filepath.Join(smallDir, fmt.Sprintf("small%d.txt", i))
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("content %d", i)), 0644))
+	}
+
+	// Track progress calls for small operation
+	smallProgressCalls := 0
+	smallCallback := func(current, total int, currentFile string) {
+		smallProgressCalls++
+	}
+
+	err = suite.lnk.AddRecursiveWithProgress([]string{smallDir}, smallCallback)
+	suite.Require().NoError(err, "AddRecursiveWithProgress should succeed for small operation")
+
+	// Should NOT call progress for small operations
+	suite.Equal(0, smallProgressCalls, "Progress should not be called for operations under threshold")
+
+	// Test with many files (over threshold)
+	largeDir := filepath.Join(suite.tempDir, "large-test")
+	err = os.MkdirAll(largeDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create 15 files (over 10 threshold)
+	for i := 0; i < 15; i++ {
+		file := filepath.Join(largeDir, fmt.Sprintf("large%d.txt", i))
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("content %d", i)), 0644))
+	}
+
+	// Track progress calls for large operation
+	largeProgressCalls := 0
+	largeCallback := func(current, total int, currentFile string) {
+		largeProgressCalls++
+	}
+
+	err = suite.lnk.AddRecursiveWithProgress([]string{largeDir}, largeCallback)
+	suite.Require().NoError(err, "AddRecursiveWithProgress should succeed for large operation")
+
+	// Should call progress for large operations
+	suite.Equal(15, largeProgressCalls, "Progress should be called for operations over threshold")
+}
+
 func TestCoreSuite(t *testing.T) {
 	suite.Run(t, new(CoreTestSuite))
 }

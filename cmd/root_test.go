@@ -1012,6 +1012,113 @@ func (suite *CLITestSuite) TestAddCommandMixedTypes() {
 	suite.FileExists(filepath.Join(lnkDir, ".config", "git", "config"))
 }
 
+func (suite *CLITestSuite) TestAddCommandRecursiveFlag() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create a directory with nested files
+	testDir := filepath.Join(suite.tempDir, ".config", "zed")
+	err = os.MkdirAll(testDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create nested files
+	settingsFile := filepath.Join(testDir, "settings.json")
+	err = os.WriteFile(settingsFile, []byte(`{"theme": "dark"}`), 0644)
+	suite.Require().NoError(err)
+
+	keymapFile := filepath.Join(testDir, "keymap.json")
+	err = os.WriteFile(keymapFile, []byte(`{"ctrl+s": "save"}`), 0644)
+	suite.Require().NoError(err)
+
+	// Create a subdirectory with files
+	themesDir := filepath.Join(testDir, "themes")
+	err = os.MkdirAll(themesDir, 0755)
+	suite.Require().NoError(err)
+
+	themeFile := filepath.Join(themesDir, "custom.json")  
+	err = os.WriteFile(themeFile, []byte(`{"colors": {}}`), 0644)
+	suite.Require().NoError(err)
+
+	// Test recursive flag - should process directory contents individually
+	err = suite.runCommand("add", "--recursive", testDir)
+	suite.NoError(err, "Adding directory recursively should succeed")
+
+	// Check output shows multiple files were processed
+	output := suite.stdout.String()
+	suite.Contains(output, "Added") // Should show some success message
+	
+	// Verify individual files are now symlinks (not the directory itself)
+	info, err := os.Lstat(settingsFile)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink, "settings.json should be a symlink")
+
+	info, err = os.Lstat(keymapFile)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink, "keymap.json should be a symlink")
+
+	info, err = os.Lstat(themeFile)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink, "custom.json should be a symlink")
+
+	// The directory itself should NOT be a symlink
+	info, err = os.Lstat(testDir)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "Directory should not be a symlink")
+
+	// Verify files exist individually in storage
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	suite.FileExists(filepath.Join(lnkDir, ".config", "zed", "settings.json"))
+	suite.FileExists(filepath.Join(lnkDir, ".config", "zed", "keymap.json"))
+	suite.FileExists(filepath.Join(lnkDir, ".config", "zed", "themes", "custom.json"))
+}
+
+func (suite *CLITestSuite) TestAddCommandRecursiveMultipleDirs() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create two directories with files
+	dir1 := filepath.Join(suite.tempDir, "dir1")
+	dir2 := filepath.Join(suite.tempDir, "dir2")
+	err = os.MkdirAll(dir1, 0755)
+	suite.Require().NoError(err)
+	err = os.MkdirAll(dir2, 0755)
+	suite.Require().NoError(err)
+
+	// Create files in each directory
+	file1 := filepath.Join(dir1, "file1.txt")
+	file2 := filepath.Join(dir2, "file2.txt")
+	err = os.WriteFile(file1, []byte("content1"), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(file2, []byte("content2"), 0644)
+	suite.Require().NoError(err)
+
+	// Test recursive flag with multiple directories
+	err = suite.runCommand("add", "--recursive", dir1, dir2)
+	suite.NoError(err, "Adding multiple directories recursively should succeed")
+
+	// Verify both files are symlinks
+	info, err := os.Lstat(file1)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink, "file1.txt should be a symlink")
+
+	info, err = os.Lstat(file2)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink, "file2.txt should be a symlink")
+
+	// Verify directories are not symlinks
+	info, err = os.Lstat(dir1)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "dir1 should not be a symlink")
+
+	info, err = os.Lstat(dir2)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "dir2 should not be a symlink")
+}
+
 func TestCLISuite(t *testing.T) {
 	suite.Run(t, new(CLITestSuite))
 }

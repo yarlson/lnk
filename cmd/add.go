@@ -17,23 +17,46 @@ func newAddCmd() *cobra.Command {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, _ := cmd.Flags().GetString("host")
+			recursive, _ := cmd.Flags().GetBool("recursive")
 			lnk := core.NewLnk(core.WithHost(host))
 
-			// Use appropriate method based on number of files
-			if len(args) == 1 {
-				// Single file - use existing Add method for backward compatibility
-				if err := lnk.Add(args[0]); err != nil {
+			// Handle recursive mode
+			if recursive {
+				// Create progress callback for CLI display
+				progressCallback := func(current, total int, currentFile string) {
+					printf(cmd, "\r⏳ Processing %d/%d: %s", current, total, currentFile)
+				}
+				
+				if err := lnk.AddRecursiveWithProgress(args, progressCallback); err != nil {
 					return err
 				}
+				
+				// Clear progress line and show completion
+				printf(cmd, "\r")
 			} else {
-				// Multiple files - use AddMultiple for atomic operation
-				if err := lnk.AddMultiple(args); err != nil {
-					return err
+				// Use appropriate method based on number of files
+				if len(args) == 1 {
+					// Single file - use existing Add method for backward compatibility
+					if err := lnk.Add(args[0]); err != nil {
+						return err
+					}
+				} else {
+					// Multiple files - use AddMultiple for atomic operation
+					if err := lnk.AddMultiple(args); err != nil {
+						return err
+					}
 				}
 			}
 
 			// Display results
-			if len(args) == 1 {
+			if recursive {
+				// Recursive mode - show different message
+				if host != "" {
+					printf(cmd, "✨ \033[1mAdded files recursively to lnk (host: %s)\033[0m\n", host)
+				} else {
+					printf(cmd, "✨ \033[1mAdded files recursively to lnk\033[0m\n")
+				}
+			} else if len(args) == 1 {
 				// Single file - maintain existing output format for backward compatibility
 				filePath := args[0]
 				basename := filepath.Base(filePath)
@@ -69,5 +92,6 @@ func newAddCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("host", "H", "", "Manage file for specific host (default: common configuration)")
+	cmd.Flags().BoolP("recursive", "r", false, "Add directory contents individually instead of the directory as a whole")
 	return cmd
 }
