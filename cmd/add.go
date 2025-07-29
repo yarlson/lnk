@@ -9,8 +9,8 @@ import (
 
 func newAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:           "add <file>...",
-		Short:         "✨ Add files to lnk management",
+		Use:   "add <file>...",
+		Short: "✨ Add files to lnk management",
 		Long: `Moves files to the lnk repository and creates symlinks in their place. Supports multiple files.
 
 Examples:
@@ -40,20 +40,20 @@ changes to your system - perfect for verification before bulk operations.`,
 				if err != nil {
 					return err
 				}
-				
+
 				// Display preview output
 				if recursive {
 					printf(cmd, "🔍 \033[1mWould add %d files recursively:\033[0m\n", len(files))
 				} else {
 					printf(cmd, "🔍 \033[1mWould add %d files:\033[0m\n", len(files))
 				}
-				
+
 				// List files that would be added
 				for _, file := range files {
 					basename := filepath.Base(file)
 					printf(cmd, "   📄 \033[90m%s\033[0m\n", basename)
 				}
-				
+
 				printf(cmd, "\n💡 \033[33mTo proceed:\033[0m run without --dry-run flag\n")
 				return nil
 			}
@@ -65,19 +65,19 @@ changes to your system - perfect for verification before bulk operations.`,
 				if err != nil {
 					return err
 				}
-				
+
 				// Create progress callback for CLI display
 				progressCallback := func(current, total int, currentFile string) {
 					printf(cmd, "\r⏳ Processing %d/%d: %s", current, total, currentFile)
 				}
-				
+
 				if err := lnk.AddRecursiveWithProgress(args, progressCallback); err != nil {
 					return err
 				}
-				
+
 				// Clear progress line and show completion
 				printf(cmd, "\r")
-				
+
 				// Store processed file count for display
 				args = previewFiles // Replace args with actual files for display
 			} else {
@@ -103,13 +103,13 @@ changes to your system - perfect for verification before bulk operations.`,
 				} else {
 					printf(cmd, "✨ \033[1mAdded %d files recursively to lnk\033[0m\n", len(args))
 				}
-				
+
 				// Show some of the files that were added (limit to first few for readability)
 				filesToShow := len(args)
 				if filesToShow > 5 {
 					filesToShow = 5
 				}
-				
+
 				for i := 0; i < filesToShow; i++ {
 					basename := filepath.Base(args[i])
 					if host != "" {
@@ -118,7 +118,7 @@ changes to your system - perfect for verification before bulk operations.`,
 						printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/...\033[0m\n", basename)
 					}
 				}
-				
+
 				if len(args) > 5 {
 					printf(cmd, "   \033[90m... and %d more files\033[0m\n", len(args)-5)
 				}

@@ -1038,7 +1038,7 @@ func (suite *CLITestSuite) TestAddCommandRecursiveFlag() {
 	err = os.MkdirAll(themesDir, 0755)
 	suite.Require().NoError(err)
 
-	themeFile := filepath.Join(themesDir, "custom.json")  
+	themeFile := filepath.Join(themesDir, "custom.json")
 	err = os.WriteFile(themeFile, []byte(`{"colors": {}}`), 0644)
 	suite.Require().NoError(err)
 
@@ -1049,7 +1049,7 @@ func (suite *CLITestSuite) TestAddCommandRecursiveFlag() {
 	// Check output shows multiple files were processed
 	output := suite.stdout.String()
 	suite.Contains(output, "Added") // Should show some success message
-	
+
 	// Verify individual files are now symlinks (not the directory itself)
 	info, err := os.Lstat(settingsFile)
 	suite.NoError(err)
@@ -1140,7 +1140,7 @@ func (suite *CLITestSuite) TestDryRunFlag() {
 	err = suite.runCommand("add", "--dry-run", testFile1, testFile2)
 	suite.NoError(err, "Dry-run command should succeed")
 	output := suite.stdout.String()
-	
+
 	// Basic check that some output was produced (flag exists but behavior TBD)
 	suite.NotEmpty(output, "Should produce some output")
 
@@ -1186,7 +1186,7 @@ func (suite *CLITestSuite) TestDryRunOutput() {
 	suite.Contains(output, "test1.txt", "Should show first file")
 	suite.Contains(output, "test2.txt", "Should show second file")
 	suite.Contains(output, "2 files", "Should show file count")
-	
+
 	// Should contain helpful instructions
 	suite.Contains(output, "run without --dry-run", "Should provide next steps")
 }
@@ -1219,7 +1219,7 @@ func (suite *CLITestSuite) TestDryRunRecursive() {
 	suite.Contains(output, "Would add", "Should show dry-run preview")
 	suite.Contains(output, "15 files", "Should show correct file count")
 	suite.Contains(output, "recursively", "Should indicate recursive mode")
-	
+
 	// Should show some of the files
 	suite.Contains(output, "config1.json", "Should show first file")
 	suite.Contains(output, "config15.json", "Should show last file")
@@ -1247,7 +1247,7 @@ func (suite *CLITestSuite) TestEnhancedSuccessOutput() {
 		filepath.Join(suite.tempDir, "config2.txt"),
 		filepath.Join(suite.tempDir, "config3.txt"),
 	}
-	
+
 	for i, file := range testFiles {
 		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("content %d", i+1)), 0644))
 	}
@@ -1261,12 +1261,12 @@ func (suite *CLITestSuite) TestEnhancedSuccessOutput() {
 	// Should have enhanced formatting with consistent indentation
 	suite.Contains(output, "🔗", "Should use link icons")
 	suite.Contains(output, "config1.txt", "Should show first file")
-	suite.Contains(output, "config2.txt", "Should show second file") 
+	suite.Contains(output, "config2.txt", "Should show second file")
 	suite.Contains(output, "config3.txt", "Should show third file")
-	
+
 	// Should show organized file list
 	suite.Contains(output, "   ", "Should have consistent indentation")
-	
+
 	// Should include summary information
 	suite.Contains(output, "3 items", "Should show total count")
 }
@@ -1296,11 +1296,11 @@ func (suite *CLITestSuite) TestOperationSummary() {
 	// Should show operation summary
 	suite.Contains(output, "recursively", "Should indicate operation type")
 	suite.Contains(output, "5", "Should show correct file count")
-	
+
 	// Should include contextual help message
 	suite.Contains(output, "lnk push", "Should suggest next steps")
 	suite.Contains(output, "sync to remote", "Should explain next step purpose")
-	
+
 	// Should show operation completion confirmation
 	suite.Contains(output, "✨", "Should use success emoji")
 	suite.Contains(output, "Added", "Should confirm operation completed")
@@ -1317,7 +1317,7 @@ func (suite *CLITestSuite) TestUpdatedHelpText() {
 
 	// Should mention bulk operations
 	suite.Contains(helpOutput, "multiple files", "Help should mention multiple file support")
-	
+
 	// Test add command help
 	err = suite.runCommand("add", "--help")
 	suite.NoError(err)
@@ -1326,13 +1326,13 @@ func (suite *CLITestSuite) TestUpdatedHelpText() {
 	// Should include new flags
 	suite.Contains(addHelpOutput, "--recursive", "Help should include recursive flag")
 	suite.Contains(addHelpOutput, "--dry-run", "Help should include dry-run flag")
-	
+
 	// Should include examples
 	suite.Contains(addHelpOutput, "Examples:", "Help should include usage examples")
 	suite.Contains(addHelpOutput, "lnk add ~/.bashrc ~/.vimrc", "Help should show multiple file example")
 	suite.Contains(addHelpOutput, "lnk add --recursive ~/.config", "Help should show recursive example")
 	suite.Contains(addHelpOutput, "lnk add --dry-run", "Help should show dry-run example")
-	
+
 	// Should describe what each flag does
 	suite.Contains(addHelpOutput, "directory contents individually", "Should explain recursive flag")
 	suite.Contains(addHelpOutput, "without making changes", "Should explain dry-run flag")

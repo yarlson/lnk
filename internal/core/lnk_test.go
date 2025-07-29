@@ -867,7 +867,7 @@ func (suite *CoreTestSuite) TestAddMultiple() {
 	suite.NoError(err)
 	suite.Equal("file1.txt\nfile2.txt\nfile3.txt\n", string(lnkContent))
 
-	// Verify Git commit was created  
+	// Verify Git commit was created
 	commits, err := suite.lnk.GetCommits()
 	suite.NoError(err)
 	suite.T().Logf("Commits: %v", commits)
@@ -1037,7 +1037,7 @@ func (suite *CoreTestSuite) TestAtomicRollbackOnFailure() {
 	info1After, err := os.Lstat(file1)
 	suite.NoError(err)
 	suite.Equal(info1Before.Mode(), info1After.Mode(), "file1 mode should be unchanged")
-	
+
 	info3After, err := os.Lstat(file3)
 	suite.NoError(err)
 	suite.Equal(info3Before.Mode(), info3After.Mode(), "file3 mode should be unchanged")
@@ -1120,10 +1120,10 @@ func (suite *CoreTestSuite) TestWalkDirectory() {
 	// Call walkDirectory method (which doesn't exist yet)
 	files, err := suite.lnk.walkDirectory(configDir)
 	suite.Require().NoError(err, "walkDirectory should succeed")
-	
+
 	// Should find all 4 files
 	suite.Len(files, 4, "Should find all files in nested structure")
-	
+
 	// Check that all expected files are found (order may vary)
 	expectedFiles := []string{file1, file2, file3, file4}
 	for _, expectedFile := range expectedFiles {
@@ -1157,7 +1157,7 @@ func (suite *CoreTestSuite) TestWalkDirectoryIncludesHiddenFiles() {
 	// Call walkDirectory method
 	files, err := suite.lnk.walkDirectory(testDir)
 	suite.Require().NoError(err, "walkDirectory should succeed with hidden files")
-	
+
 	// Should find all files including hidden ones
 	suite.Len(files, 3, "Should find all files including hidden ones")
 	suite.Contains(files, regularFile, "Should include regular file")
@@ -1187,12 +1187,12 @@ func (suite *CoreTestSuite) TestWalkDirectorySymlinkHandling() {
 	// Call walkDirectory method
 	files, err := suite.lnk.walkDirectory(testDir)
 	suite.Require().NoError(err, "walkDirectory should handle symlinks")
-	
+
 	// Should include both regular file and properly handle symlink
 	// (exact behavior depends on implementation - could include symlink as file)
 	suite.GreaterOrEqual(len(files), 1, "Should find at least the regular file")
 	suite.Contains(files, regularFile, "Should include regular file")
-	
+
 	// The symlink handling behavior will be defined in implementation
 	// For now, we just ensure no errors occur
 }
@@ -1219,14 +1219,14 @@ func (suite *CoreTestSuite) TestWalkDirectoryEmptyDirs() {
 	nonEmptyDir := filepath.Join(testDir, "non-empty")
 	err = os.MkdirAll(nonEmptyDir, 0755)
 	suite.Require().NoError(err)
-	
+
 	testFile := filepath.Join(nonEmptyDir, "test.txt")
 	suite.Require().NoError(os.WriteFile(testFile, []byte("content"), 0644))
 
 	// Call walkDirectory method
 	files, err := suite.lnk.walkDirectory(testDir)
 	suite.Require().NoError(err, "walkDirectory should skip empty directories")
-	
+
 	// Should only find the one file, not empty directories
 	suite.Len(files, 1, "Should only find files, not empty directories")
 	suite.Contains(files, testFile, "Should include the actual file")
@@ -1354,7 +1354,7 @@ func (suite *CoreTestSuite) TestPreviewAdd() {
 	// Test PreviewAdd for multiple files
 	files, err := suite.lnk.PreviewAdd([]string{testFile1, testFile2}, false)
 	suite.Require().NoError(err, "PreviewAdd should succeed")
-	
+
 	// Should return both files
 	suite.Len(files, 2, "Should preview both files")
 	suite.Contains(files, testFile1, "Should include first file")
@@ -1392,10 +1392,10 @@ func (suite *CoreTestSuite) TestPreviewAddRecursive() {
 	// Test PreviewAdd with recursive
 	files, err := suite.lnk.PreviewAdd([]string{configDir}, true)
 	suite.Require().NoError(err, "PreviewAdd recursive should succeed")
-	
+
 	// Should return all files in directory
 	suite.Len(files, expectedFiles, "Should preview all files in directory")
-	
+
 	// Check that all created files are included
 	for _, createdFile := range createdFiles {
 		suite.Contains(files, createdFile, "Should include file %s", createdFile)

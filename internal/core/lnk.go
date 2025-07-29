@@ -831,17 +831,17 @@ func (l *Lnk) RunBootstrapScript(scriptName string) error {
 // walkDirectory walks through a directory and returns all regular files
 func (l *Lnk) walkDirectory(dirPath string) ([]string, error) {
 	var files []string
-	
+
 	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		
+
 		// Skip directories - we only want files
 		if info.IsDir() {
 			return nil
 		}
-		
+
 		// Handle symlinks: include them as files if they point to regular files
 		if info.Mode()&os.ModeSymlink != 0 {
 			// For symlinks, we'll include them but the AddMultiple logic
@@ -849,19 +849,19 @@ func (l *Lnk) walkDirectory(dirPath string) ([]string, error) {
 			files = append(files, path)
 			return nil
 		}
-		
+
 		// Include regular files
 		if info.Mode().IsRegular() {
 			files = append(files, path)
 		}
-		
+
 		return nil
 	})
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk directory %s: %w", dirPath, err)
 	}
-	
+
 	return files, nil
 }
 
@@ -871,20 +871,20 @@ type ProgressCallback func(current, total int, currentFile string)
 // AddRecursiveWithProgress adds directory contents individually with progress reporting
 func (l *Lnk) AddRecursiveWithProgress(paths []string, progress ProgressCallback) error {
 	var allFiles []string
-	
+
 	for _, path := range paths {
 		// Get absolute path
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			return fmt.Errorf("failed to get absolute path for %s: %w", path, err)
 		}
-		
+
 		// Check if it's a directory
 		info, err := os.Stat(absPath)
 		if err != nil {
 			return fmt.Errorf("failed to stat %s: %w", path, err)
 		}
-		
+
 		if info.IsDir() {
 			// Walk directory to get all files
 			files, err := l.walkDirectory(absPath)
@@ -897,18 +897,18 @@ func (l *Lnk) AddRecursiveWithProgress(paths []string, progress ProgressCallback
 			allFiles = append(allFiles, absPath)
 		}
 	}
-	
+
 	// Use AddMultiple for batch processing
 	if len(allFiles) == 0 {
 		return fmt.Errorf("no files found to add")
 	}
-	
+
 	// Apply progress threshold: only show progress for >10 files
 	const progressThreshold = 10
 	if len(allFiles) > progressThreshold && progress != nil {
 		return l.addMultipleWithProgress(allFiles, progress)
 	}
-	
+
 	// For small operations, use regular AddMultiple without progress
 	return l.AddMultiple(allFiles)
 }
@@ -1053,20 +1053,20 @@ func (l *Lnk) addMultipleWithProgress(paths []string, progress ProgressCallback)
 // AddRecursive adds directory contents individually instead of the directory as a whole
 func (l *Lnk) AddRecursive(paths []string) error {
 	var allFiles []string
-	
+
 	for _, path := range paths {
 		// Get absolute path
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			return fmt.Errorf("failed to get absolute path for %s: %w", path, err)
 		}
-		
+
 		// Check if it's a directory
 		info, err := os.Stat(absPath)
 		if err != nil {
 			return fmt.Errorf("failed to stat %s: %w", path, err)
 		}
-		
+
 		if info.IsDir() {
 			// Walk directory to get all files
 			files, err := l.walkDirectory(absPath)
@@ -1079,32 +1079,32 @@ func (l *Lnk) AddRecursive(paths []string) error {
 			allFiles = append(allFiles, absPath)
 		}
 	}
-	
+
 	// Use AddMultiple for batch processing
 	if len(allFiles) == 0 {
 		return fmt.Errorf("no files found to add")
 	}
-	
+
 	return l.AddMultiple(allFiles)
 }
 
 // PreviewAdd simulates an add operation and returns files that would be affected
 func (l *Lnk) PreviewAdd(paths []string, recursive bool) ([]string, error) {
 	var allFiles []string
-	
+
 	for _, path := range paths {
 		// Get absolute path
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get absolute path for %s: %w", path, err)
 		}
-		
+
 		// Check if it's a directory
 		info, err := os.Stat(absPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to stat %s: %w", path, err)
 		}
-		
+
 		if info.IsDir() && recursive {
 			// Walk directory to get all files (same logic as AddRecursive)
 			files, err := l.walkDirectory(absPath)
@@ -1117,7 +1117,7 @@ func (l *Lnk) PreviewAdd(paths []string, recursive bool) ([]string, error) {
 			allFiles = append(allFiles, absPath)
 		}
 	}
-	
+
 	// Validate files (same validation as AddMultiple but without making changes)
 	var validFiles []string
 	for _, filePath := range allFiles {
@@ -1145,6 +1145,6 @@ func (l *Lnk) PreviewAdd(paths []string, recursive bool) ([]string, error) {
 
 		validFiles = append(validFiles, filePath)
 	}
-	
+
 	return validFiles, nil
 }
