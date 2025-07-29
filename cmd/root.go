@@ -20,17 +20,19 @@ func NewRootCommand() *cobra.Command {
 		Long: `🔗 Lnk - Git-native dotfiles management that doesn't suck.
 
 Move your dotfiles to ~/.config/lnk, symlink them back, and use Git like normal.
-Supports both common configurations and host-specific setups.
+Supports both common configurations, host-specific setups, and bulk operations for multiple files.
 
 ✨ Examples:
-  lnk init                         # Fresh start
-  lnk init -r <repo-url>           # Clone existing dotfiles (runs bootstrap automatically)
-  lnk add ~/.vimrc ~/.bashrc       # Start managing common files
-  lnk add --host work ~/.ssh/config # Manage host-specific files
-  lnk list --all                  # Show all configurations
-  lnk pull --host work             # Pull host-specific changes
-  lnk push "setup complete"        # Sync to remote
-  lnk bootstrap                    # Run bootstrap script manually
+  lnk init                           # Fresh start
+  lnk init -r <repo-url>             # Clone existing dotfiles (runs bootstrap automatically)
+  lnk add ~/.vimrc ~/.bashrc         # Start managing common files
+  lnk add --recursive ~/.config/nvim # Add directory contents individually
+  lnk add --dry-run ~/.gitconfig     # Preview changes without applying
+  lnk add --host work ~/.ssh/config  # Manage host-specific files
+  lnk list --all                     # Show all configurations
+  lnk pull --host work               # Pull host-specific changes
+  lnk push "setup complete"          # Sync to remote
+  lnk bootstrap                      # Run bootstrap script manually
 
 🚀 Bootstrap Support:
   Automatically runs bootstrap.sh when cloning a repository.

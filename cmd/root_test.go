@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1117,6 +1118,224 @@ func (suite *CLITestSuite) TestAddCommandRecursiveMultipleDirs() {
 	info, err = os.Lstat(dir2)
 	suite.NoError(err)
 	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "dir2 should not be a symlink")
+}
+
+// Task 3.1: Dry-Run Mode Tests
+
+func (suite *CLITestSuite) TestDryRunFlag() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.NoError(err)
+	initOutput := suite.stdout.String()
+	suite.Contains(initOutput, "Initialized")
+	suite.stdout.Reset()
+
+	// Create test files
+	testFile1 := filepath.Join(suite.tempDir, "test1.txt")
+	testFile2 := filepath.Join(suite.tempDir, "test2.txt")
+	suite.Require().NoError(os.WriteFile(testFile1, []byte("content1"), 0644))
+	suite.Require().NoError(os.WriteFile(testFile2, []byte("content2"), 0644))
+
+	// Run add with dry-run flag (should not exist yet)
+	err = suite.runCommand("add", "--dry-run", testFile1, testFile2)
+	suite.NoError(err, "Dry-run command should succeed")
+	output := suite.stdout.String()
+	
+	// Basic check that some output was produced (flag exists but behavior TBD)
+	suite.NotEmpty(output, "Should produce some output")
+
+	// Verify files were NOT actually added (no symlinks created)
+	info, err := os.Lstat(testFile1)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "File should not be a symlink in dry-run")
+
+	info, err = os.Lstat(testFile2)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "File should not be a symlink in dry-run")
+
+	// Verify lnk list shows no managed files
+	suite.stdout.Reset()
+	err = suite.runCommand("list")
+	suite.NoError(err)
+	listOutput := suite.stdout.String()
+	suite.NotContains(listOutput, "test1.txt", "Files should not be managed after dry-run")
+	suite.NotContains(listOutput, "test2.txt", "Files should not be managed after dry-run")
+}
+
+func (suite *CLITestSuite) TestDryRunOutput() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.NoError(err)
+	initOutput := suite.stdout.String()
+	suite.Contains(initOutput, "Initialized")
+	suite.stdout.Reset()
+
+	// Create test files
+	testFile1 := filepath.Join(suite.tempDir, "test1.txt")
+	testFile2 := filepath.Join(suite.tempDir, "test2.txt")
+	suite.Require().NoError(os.WriteFile(testFile1, []byte("content1"), 0644))
+	suite.Require().NoError(os.WriteFile(testFile2, []byte("content2"), 0644))
+
+	// Run add with dry-run flag
+	err = suite.runCommand("add", "--dry-run", testFile1, testFile2)
+	suite.NoError(err, "Dry-run command should succeed")
+	output := suite.stdout.String()
+
+	// Verify dry-run shows preview of what would be added
+	suite.Contains(output, "Would add", "Should show dry-run preview")
+	suite.Contains(output, "test1.txt", "Should show first file")
+	suite.Contains(output, "test2.txt", "Should show second file")
+	suite.Contains(output, "2 files", "Should show file count")
+	
+	// Should contain helpful instructions
+	suite.Contains(output, "run without --dry-run", "Should provide next steps")
+}
+
+func (suite *CLITestSuite) TestDryRunRecursive() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.NoError(err)
+	initOutput := suite.stdout.String()
+	suite.Contains(initOutput, "Initialized")
+	suite.stdout.Reset()
+
+	// Create directory structure with multiple files
+	configDir := filepath.Join(suite.tempDir, ".config", "test-app")
+	err = os.MkdirAll(configDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create files in directory
+	for i := 1; i <= 15; i++ {
+		file := filepath.Join(configDir, fmt.Sprintf("config%d.json", i))
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("config %d", i)), 0644))
+	}
+
+	// Run recursive add with dry-run
+	err = suite.runCommand("add", "--dry-run", "--recursive", configDir)
+	suite.NoError(err, "Dry-run recursive command should succeed")
+	output := suite.stdout.String()
+
+	// Verify dry-run shows all files that would be added
+	suite.Contains(output, "Would add", "Should show dry-run preview")
+	suite.Contains(output, "15 files", "Should show correct file count")
+	suite.Contains(output, "recursively", "Should indicate recursive mode")
+	
+	// Should show some of the files
+	suite.Contains(output, "config1.json", "Should show first file")
+	suite.Contains(output, "config15.json", "Should show last file")
+
+	// Verify no actual changes were made
+	for i := 1; i <= 15; i++ {
+		file := filepath.Join(configDir, fmt.Sprintf("config%d.json", i))
+		info, err := os.Lstat(file)
+		suite.NoError(err)
+		suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "File should not be symlink after dry-run")
+	}
+}
+
+// Task 3.2: Enhanced Output and Messaging Tests
+
+func (suite *CLITestSuite) TestEnhancedSuccessOutput() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.NoError(err)
+	suite.stdout.Reset()
+
+	// Create multiple test files
+	testFiles := []string{
+		filepath.Join(suite.tempDir, "config1.txt"),
+		filepath.Join(suite.tempDir, "config2.txt"),
+		filepath.Join(suite.tempDir, "config3.txt"),
+	}
+	
+	for i, file := range testFiles {
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("content %d", i+1)), 0644))
+	}
+
+	// Add multiple files
+	args := append([]string{"add"}, testFiles...)
+	err = suite.runCommand(args...)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	// Should have enhanced formatting with consistent indentation
+	suite.Contains(output, "🔗", "Should use link icons")
+	suite.Contains(output, "config1.txt", "Should show first file")
+	suite.Contains(output, "config2.txt", "Should show second file") 
+	suite.Contains(output, "config3.txt", "Should show third file")
+	
+	// Should show organized file list
+	suite.Contains(output, "   ", "Should have consistent indentation")
+	
+	// Should include summary information
+	suite.Contains(output, "3 items", "Should show total count")
+}
+
+func (suite *CLITestSuite) TestOperationSummary() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.NoError(err)
+	suite.stdout.Reset()
+
+	// Create directory with files for recursive operation
+	configDir := filepath.Join(suite.tempDir, ".config", "test-app")
+	err = os.MkdirAll(configDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create files in directory
+	for i := 1; i <= 5; i++ {
+		file := filepath.Join(configDir, fmt.Sprintf("file%d.json", i))
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("content %d", i)), 0644))
+	}
+
+	// Add recursively
+	err = suite.runCommand("add", "--recursive", configDir)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	// Should show operation summary
+	suite.Contains(output, "recursively", "Should indicate operation type")
+	suite.Contains(output, "5", "Should show correct file count")
+	
+	// Should include contextual help message
+	suite.Contains(output, "lnk push", "Should suggest next steps")
+	suite.Contains(output, "sync to remote", "Should explain next step purpose")
+	
+	// Should show operation completion confirmation
+	suite.Contains(output, "✨", "Should use success emoji")
+	suite.Contains(output, "Added", "Should confirm operation completed")
+}
+
+// Task 3.3: Documentation and Help Updates Tests
+
+func (suite *CLITestSuite) TestUpdatedHelpText() {
+	// Test main help
+	err := suite.runCommand("help")
+	suite.NoError(err)
+	helpOutput := suite.stdout.String()
+	suite.stdout.Reset()
+
+	// Should mention bulk operations
+	suite.Contains(helpOutput, "multiple files", "Help should mention multiple file support")
+	
+	// Test add command help
+	err = suite.runCommand("add", "--help")
+	suite.NoError(err)
+	addHelpOutput := suite.stdout.String()
+
+	// Should include new flags
+	suite.Contains(addHelpOutput, "--recursive", "Help should include recursive flag")
+	suite.Contains(addHelpOutput, "--dry-run", "Help should include dry-run flag")
+	
+	// Should include examples
+	suite.Contains(addHelpOutput, "Examples:", "Help should include usage examples")
+	suite.Contains(addHelpOutput, "lnk add ~/.bashrc ~/.vimrc", "Help should show multiple file example")
+	suite.Contains(addHelpOutput, "lnk add --recursive ~/.config", "Help should show recursive example")
+	suite.Contains(addHelpOutput, "lnk add --dry-run", "Help should show dry-run example")
+	
+	// Should describe what each flag does
+	suite.Contains(addHelpOutput, "directory contents individually", "Should explain recursive flag")
+	suite.Contains(addHelpOutput, "without making changes", "Should explain dry-run flag")
 }
 
 func TestCLISuite(t *testing.T) {

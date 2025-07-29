@@ -1087,3 +1087,64 @@ func (l *Lnk) AddRecursive(paths []string) error {
 	
 	return l.AddMultiple(allFiles)
 }
+
+// PreviewAdd simulates an add operation and returns files that would be affected
+func (l *Lnk) PreviewAdd(paths []string, recursive bool) ([]string, error) {
+	var allFiles []string
+	
+	for _, path := range paths {
+		// Get absolute path
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path for %s: %w", path, err)
+		}
+		
+		// Check if it's a directory
+		info, err := os.Stat(absPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat %s: %w", path, err)
+		}
+		
+		if info.IsDir() && recursive {
+			// Walk directory to get all files (same logic as AddRecursive)
+			files, err := l.walkDirectory(absPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to walk directory %s: %w", path, err)
+			}
+			allFiles = append(allFiles, files...)
+		} else {
+			// It's a regular file or non-recursive directory, add it directly
+			allFiles = append(allFiles, absPath)
+		}
+	}
+	
+	// Validate files (same validation as AddMultiple but without making changes)
+	var validFiles []string
+	for _, filePath := range allFiles {
+		// Validate the file or directory
+		if err := l.fs.ValidateFileForAdd(filePath); err != nil {
+			return nil, fmt.Errorf("validation failed for %s: %w", filePath, err)
+		}
+
+		// Get relative path for tracking
+		relativePath, err := getRelativePath(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative path for %s: %w", filePath, err)
+		}
+
+		// Check if this relative path is already managed
+		managedItems, err := l.getManagedItems()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get managed items: %w", err)
+		}
+		for _, item := range managedItems {
+			if item == relativePath {
+				return nil, fmt.Errorf("❌ File is already managed by lnk: \033[31m%s\033[0m", relativePath)
+			}
+		}
+
+		validFiles = append(validFiles, filePath)
+	}
+	
+	return validFiles, nil
+}

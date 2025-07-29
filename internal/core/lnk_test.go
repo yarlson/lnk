@@ -1338,6 +1338,100 @@ func (suite *CoreTestSuite) TestProgressThreshold() {
 	suite.Equal(15, largeProgressCalls, "Progress should be called for operations over threshold")
 }
 
+// Task 3.1: Dry-Run Mode Core Tests
+
+func (suite *CoreTestSuite) TestPreviewAdd() {
+	// Initialize lnk repository
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create test files
+	testFile1 := filepath.Join(suite.tempDir, "test1.txt")
+	testFile2 := filepath.Join(suite.tempDir, "test2.txt")
+	suite.Require().NoError(os.WriteFile(testFile1, []byte("content1"), 0644))
+	suite.Require().NoError(os.WriteFile(testFile2, []byte("content2"), 0644))
+
+	// Test PreviewAdd for multiple files
+	files, err := suite.lnk.PreviewAdd([]string{testFile1, testFile2}, false)
+	suite.Require().NoError(err, "PreviewAdd should succeed")
+	
+	// Should return both files
+	suite.Len(files, 2, "Should preview both files")
+	suite.Contains(files, testFile1, "Should include first file")
+	suite.Contains(files, testFile2, "Should include second file")
+
+	// Verify no actual changes were made (files should still be regular files)
+	info, err := os.Lstat(testFile1)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "File should not be symlink after preview")
+
+	info, err = os.Lstat(testFile2)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "File should not be symlink after preview")
+}
+
+func (suite *CoreTestSuite) TestPreviewAddRecursive() {
+	// Initialize lnk repository
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create directory structure
+	configDir := filepath.Join(suite.tempDir, ".config", "test-app")
+	err = os.MkdirAll(configDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create files in directory
+	expectedFiles := 5
+	var createdFiles []string
+	for i := 1; i <= expectedFiles; i++ {
+		file := filepath.Join(configDir, fmt.Sprintf("config%d.json", i))
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("config %d", i)), 0644))
+		createdFiles = append(createdFiles, file)
+	}
+
+	// Test PreviewAdd with recursive
+	files, err := suite.lnk.PreviewAdd([]string{configDir}, true)
+	suite.Require().NoError(err, "PreviewAdd recursive should succeed")
+	
+	// Should return all files in directory
+	suite.Len(files, expectedFiles, "Should preview all files in directory")
+	
+	// Check that all created files are included
+	for _, createdFile := range createdFiles {
+		suite.Contains(files, createdFile, "Should include file %s", createdFile)
+	}
+
+	// Verify no actual changes were made
+	for _, createdFile := range createdFiles {
+		info, err := os.Lstat(createdFile)
+		suite.NoError(err)
+		suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "File should not be symlink after preview")
+	}
+}
+
+func (suite *CoreTestSuite) TestPreviewAddValidation() {
+	// Initialize lnk repository
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Test with nonexistent file
+	nonexistentFile := filepath.Join(suite.tempDir, "nonexistent.txt")
+	_, err = suite.lnk.PreviewAdd([]string{nonexistentFile}, false)
+	suite.Error(err, "PreviewAdd should fail for nonexistent file")
+	suite.Contains(err.Error(), "failed to stat", "Error should mention stat failure")
+
+	// Create and add a file first
+	testFile := filepath.Join(suite.tempDir, "test.txt")
+	suite.Require().NoError(os.WriteFile(testFile, []byte("content"), 0644))
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Test preview with already managed file
+	_, err = suite.lnk.PreviewAdd([]string{testFile}, false)
+	suite.Error(err, "PreviewAdd should fail for already managed file")
+	suite.Contains(err.Error(), "already managed", "Error should mention already managed")
+}
+
 func TestCoreSuite(t *testing.T) {
 	suite.Run(t, new(CoreTestSuite))
 }
