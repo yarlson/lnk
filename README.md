@@ -2,17 +2,18 @@
 
 **Git-native dotfiles management that doesn't suck.**
 
-Lnk makes managing your dotfiles straightforward, no tedious setups, no complex configurations. Just tell Lnk what files you want tracked, and it’ll automatically move them into a tidy Git repository under `~/.config/lnk`. It then creates clean, portable symlinks back to their original locations. Easy.
+Lnk makes managing your dotfiles straightforward, no tedious setups, no complex configurations. Just tell Lnk what files you want tracked, and it'll automatically move them into a tidy Git repository under `~/.config/lnk`. It then creates clean, portable symlinks back to their original locations. Easy.
 
-Why bother with Lnk instead of plain old Git or other dotfile managers? Unlike traditional methods, Lnk automates the boring parts: safely relocating files, handling host-specific setups, and even running your custom bootstrap scripts automatically. This means fewer manual steps and less chance of accidentally overwriting something important.
+Why bother with Lnk instead of plain old Git or other dotfile managers? Unlike traditional methods, Lnk automates the boring parts: safely relocating files, handling host-specific setups, bulk operations for multiple files, recursive directory processing, and even running your custom bootstrap scripts automatically. This means fewer manual steps and less chance of accidentally overwriting something important.
 
 With Lnk, your dotfiles setup stays organized and effortlessly portable, letting you spend more time doing real work, not wrestling with configuration files.
 
-
 ```bash
-lnk init -r git@github.com:user/dotfiles.git  # Clones & runs bootstrap automatically
-lnk add ~/.vimrc ~/.bashrc                    # Common config
-lnk add --host work ~/.ssh/config             # Host-specific config
+lnk init -r git@github.com:user/dotfiles.git    # Clones & runs bootstrap automatically
+lnk add ~/.vimrc ~/.bashrc ~/.gitconfig         # Multiple files at once
+lnk add --recursive ~/.config/nvim              # Process directory contents
+lnk add --dry-run ~/.tmux.conf                  # Preview changes first
+lnk add --host work ~/.ssh/config               # Host-specific config
 lnk push "setup"
 ```
 
@@ -61,12 +62,19 @@ lnk bootstrap
 ### Daily workflow
 
 ```bash
-# Add files/directories (common config)
-lnk add ~/.vimrc ~/.config/nvim ~/.gitconfig
+# Add multiple files at once (common config)
+lnk add ~/.vimrc ~/.bashrc ~/.gitconfig ~/.tmux.conf
 
-# Add host-specific files
-lnk add --host laptop ~/.ssh/config
-lnk add --host work ~/.gitconfig
+# Add directory contents individually
+lnk add --recursive ~/.config/nvim ~/.config/zsh
+
+# Preview changes before applying
+lnk add --dry-run ~/.config/git/config
+lnk add --dry-run --recursive ~/.config/kitty
+
+# Add host-specific files (supports bulk operations)
+lnk add --host laptop ~/.ssh/config ~/.aws/credentials
+lnk add --host work ~/.gitconfig ~/.ssh/config
 
 # List managed files
 lnk list                    # Common config only
@@ -160,12 +168,19 @@ Lnk supports both **common configurations** (shared across all machines) and **h
 ### Usage Patterns
 
 ```bash
-# Common config (shared everywhere)
-lnk add ~/.vimrc ~/.bashrc ~/.gitconfig
+# Common config (shared everywhere) - supports multiple files
+lnk add ~/.vimrc ~/.bashrc ~/.gitconfig ~/.tmux.conf
 
-# Host-specific config (unique per machine)
-lnk add --host $(hostname) ~/.ssh/config
-lnk add --host work ~/.gitconfig
+# Process directory contents individually
+lnk add --recursive ~/.config/nvim ~/.config/zsh
+
+# Preview operations before making changes
+lnk add --dry-run ~/.config/alacritty/alacritty.yml
+lnk add --dry-run --recursive ~/.config/i3
+
+# Host-specific config (unique per machine) - supports bulk operations
+lnk add --host $(hostname) ~/.ssh/config ~/.aws/credentials
+lnk add --host work ~/.gitconfig ~/.npmrc
 
 # List configurations
 lnk list                    # Common only
@@ -181,10 +196,13 @@ lnk pull --host work        # Work-specific config
 
 You could `git init ~/.config/lnk` and manually symlink everything. Lnk just automates the tedious parts:
 
-- Moving files safely
+- Moving files safely (with atomic operations)
 - Creating relative symlinks
-- Handling conflicts
+- Handling conflicts and rollback
 - Tracking what's managed
+- Processing multiple files efficiently
+- Recursive directory traversal
+- Preview mode for safety
 
 ## Examples
 
@@ -195,11 +213,18 @@ You could `git init ~/.config/lnk` and manually symlink everything. Lnk just aut
 lnk init -r git@github.com:you/dotfiles.git
 # → Downloads dependencies, installs packages, configures environment
 
-# Add common config (shared across all machines)
-lnk add ~/.bashrc ~/.vimrc ~/.gitconfig
+# Add common config (shared across all machines) - multiple files at once
+lnk add ~/.bashrc ~/.vimrc ~/.gitconfig ~/.tmux.conf
 
-# Add host-specific config
-lnk add --host $(hostname) ~/.ssh/config ~/.tmux.conf
+# Add configuration directories individually
+lnk add --recursive ~/.config/nvim ~/.config/zsh
+
+# Preview before adding sensitive files
+lnk add --dry-run ~/.ssh/id_rsa.pub
+lnk add ~/.ssh/id_rsa.pub  # Add after verification
+
+# Add host-specific config (supports bulk operations)
+lnk add --host $(hostname) ~/.ssh/config ~/.aws/credentials
 
 lnk push "initial setup"
 ```
@@ -235,24 +260,25 @@ lnk push "new plugins"          # commit & push
 ### Multi-machine workflow
 
 ```bash
-# On your laptop
-lnk add --host laptop ~/.ssh/config
-lnk add ~/.vimrc                # Common config
-lnk push "laptop ssh config"
+# On your laptop - use bulk operations for efficiency
+lnk add --host laptop ~/.ssh/config ~/.aws/credentials ~/.npmrc
+lnk add ~/.vimrc ~/.bashrc ~/.gitconfig    # Common config (multiple files)
+lnk push "laptop configuration"
 
 # On your work machine
-lnk pull                        # Get common config
-lnk add --host work ~/.gitconfig
-lnk push "work git config"
+lnk pull                                   # Get common config
+lnk add --host work ~/.gitconfig ~/.ssh/config
+lnk add --recursive ~/.config/work-tools  # Work-specific tools
+lnk push "work configuration"
 
 # Back on laptop
-lnk pull                        # Get updates (work config won't affect laptop)
+lnk pull                                   # Get updates (work config won't affect laptop)
 ```
 
 ## Commands
 
 - `lnk init [-r remote] [--no-bootstrap]` - Create repo (runs bootstrap automatically)
-- `lnk add [--host HOST] <files>` - Move files to repo, create symlinks
+- `lnk add [--host HOST] [--recursive] [--dry-run] <files>...` - Move files to repo, create symlinks
 - `lnk rm [--host HOST] <files>` - Move files back, remove symlinks
 - `lnk list [--host HOST] [--all]` - List files managed by lnk
 - `lnk status` - Git status + sync info
@@ -263,9 +289,28 @@ lnk pull                        # Get updates (work config won't affect laptop)
 ### Command Options
 
 - `--host HOST` - Manage files for specific host (default: common configuration)
+- `--recursive, -r` - Add directory contents individually instead of the directory as a whole
+- `--dry-run, -n` - Show what would be added without making changes
 - `--all` - Show all configurations (common + all hosts) when listing
 - `-r, --remote URL` - Clone from remote URL when initializing
 - `--no-bootstrap` - Skip automatic execution of bootstrap script after cloning
+
+### Add Command Examples
+
+```bash
+# Multiple files at once
+lnk add ~/.bashrc ~/.vimrc ~/.gitconfig
+
+# Recursive directory processing
+lnk add --recursive ~/.config/nvim
+
+# Preview changes first
+lnk add --dry-run ~/.ssh/config
+lnk add --dry-run --recursive ~/.config/kitty
+
+# Host-specific bulk operations
+lnk add --host work ~/.gitconfig ~/.ssh/config ~/.npmrc
+```
 
 ## Technical bits
 
@@ -274,17 +319,20 @@ lnk pull                        # Get updates (work config won't affect laptop)
 - **XDG compliant** (`~/.config/lnk`)
 - **Multihost support** (common + host-specific configs)
 - **Bootstrap support** (automatic environment setup)
+- **Bulk operations** (multiple files, atomic transactions)
+- **Recursive processing** (directory contents individually)
+- **Preview mode** (dry-run for safety)
 - **Git-native** (standard Git repo, no special formats)
 
 ## Alternatives
 
-| Tool    | Complexity | Why choose it                                           |
-| ------- | ---------- | ------------------------------------------------------- |
-| **lnk** | Minimal    | Just works, no config, Git-native, multihost, bootstrap |
-| chezmoi | High       | Templates, encryption, cross-platform                   |
-| yadm    | Medium     | Git power user, encryption                              |
-| dotbot  | Low        | YAML config, basic features                             |
-| stow    | Low        | Perl, symlink only                                      |
+| Tool    | Complexity | Why choose it                                                              |
+| ------- | ---------- | -------------------------------------------------------------------------- |
+| **lnk** | Minimal    | Just works, no config, Git-native, multihost, bootstrap, bulk ops, dry-run |
+| chezmoi | High       | Templates, encryption, cross-platform                                      |
+| yadm    | Medium     | Git power user, encryption                                                 |
+| dotbot  | Low        | YAML config, basic features                                                |
+| stow    | Low        | Perl, symlink only                                                         |
 
 ## Contributing
 
