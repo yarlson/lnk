@@ -257,6 +257,153 @@ func (l *Lnk) Add(filePath string) error {
 	return nil
 }
 
+// AddMultiple adds multiple files or directories to the repository in a single transaction
+func (l *Lnk) AddMultiple(paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+
+	// Phase 1: Validate all paths first
+	var relativePaths []string
+	var absolutePaths []string
+	var infos []os.FileInfo
+
+	for _, filePath := range paths {
+		// Validate the file or directory
+		if err := l.fs.ValidateFileForAdd(filePath); err != nil {
+			return fmt.Errorf("validation failed for %s: %w", filePath, err)
+		}
+
+		// Get absolute path
+		absPath, err := filepath.Abs(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path for %s: %w", filePath, err)
+		}
+
+		// Get relative path for tracking
+		relativePath, err := getRelativePath(absPath)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path for %s: %w", filePath, err)
+		}
+
+		// Check if this relative path is already managed
+		managedItems, err := l.getManagedItems()
+		if err != nil {
+			return fmt.Errorf("failed to get managed items: %w", err)
+		}
+		for _, item := range managedItems {
+			if item == relativePath {
+				return fmt.Errorf("❌ File is already managed by lnk: \033[31m%s\033[0m", relativePath)
+			}
+		}
+
+		// Get file info
+		info, err := os.Stat(absPath)
+		if err != nil {
+			return fmt.Errorf("failed to stat path %s: %w", filePath, err)
+		}
+
+		relativePaths = append(relativePaths, relativePath)
+		absolutePaths = append(absolutePaths, absPath)
+		infos = append(infos, info)
+	}
+
+	// Phase 2: Process all files - move to repository and create symlinks
+	var rollbackActions []func() error
+
+	for i, absPath := range absolutePaths {
+		relativePath := relativePaths[i]
+		info := infos[i]
+
+		// Generate repository path from relative path
+		storagePath := l.getHostStoragePath()
+		destPath := filepath.Join(storagePath, relativePath)
+
+		// Ensure destination directory exists
+		destDir := filepath.Dir(destPath)
+		if err := os.MkdirAll(destDir, 0755); err != nil {
+			// Rollback previous operations
+			l.rollbackOperations(rollbackActions)
+			return fmt.Errorf("failed to create destination directory: %w", err)
+		}
+
+		// Move to repository
+		if err := l.fs.Move(absPath, destPath, info); err != nil {
+			// Rollback previous operations
+			l.rollbackOperations(rollbackActions)
+			return fmt.Errorf("failed to move %s: %w", absPath, err)
+		}
+
+		// Create symlink
+		if err := l.fs.CreateSymlink(destPath, absPath); err != nil {
+			// Try to restore the file we just moved, then rollback others
+			_ = l.fs.Move(destPath, absPath, info)
+			l.rollbackOperations(rollbackActions)
+			return fmt.Errorf("failed to create symlink for %s: %w", absPath, err)
+		}
+
+		// Add to tracking
+		if err := l.addManagedItem(relativePath); err != nil {
+			// Restore this file and rollback others
+			_ = os.Remove(absPath)
+			_ = l.fs.Move(destPath, absPath, info)
+			l.rollbackOperations(rollbackActions)
+			return fmt.Errorf("failed to update tracking file for %s: %w", absPath, err)
+		}
+
+		// Add rollback action for this file
+		rollbackAction := l.createRollbackAction(absPath, destPath, relativePath, info)
+		rollbackActions = append(rollbackActions, rollbackAction)
+	}
+
+	// Phase 3: Git operations - add all files and create single commit
+	for i, relativePath := range relativePaths {
+		// For host-specific files, we need to add the relative path from repo root
+		gitPath := relativePath
+		if l.host != "" {
+			gitPath = filepath.Join(l.host+".lnk", relativePath)
+		}
+		if err := l.git.Add(gitPath); err != nil {
+			// Rollback all operations
+			l.rollbackOperations(rollbackActions)
+			return fmt.Errorf("failed to add %s to git: %w", absolutePaths[i], err)
+		}
+	}
+
+	// Add .lnk file to the same commit
+	if err := l.git.Add(l.getLnkFileName()); err != nil {
+		// Rollback all operations
+		l.rollbackOperations(rollbackActions)
+		return fmt.Errorf("failed to add tracking file to git: %w", err)
+	}
+
+	// Commit all changes together
+	commitMessage := fmt.Sprintf("lnk: added %d files", len(paths))
+	if err := l.git.Commit(commitMessage); err != nil {
+		// Rollback all operations
+		l.rollbackOperations(rollbackActions)
+		return fmt.Errorf("failed to commit changes: %w", err)
+	}
+
+	return nil
+}
+
+// createRollbackAction creates a rollback function for a single file operation
+func (l *Lnk) createRollbackAction(absPath, destPath, relativePath string, info os.FileInfo) func() error {
+	return func() error {
+		_ = os.Remove(absPath)
+		_ = l.removeManagedItem(relativePath)
+		return l.fs.Move(destPath, absPath, info)
+	}
+}
+
+// rollbackOperations executes rollback actions in reverse order
+func (l *Lnk) rollbackOperations(rollbackActions []func() error) {
+	for i := len(rollbackActions) - 1; i >= 0; i-- {
+		_ = rollbackActions[i]()
+	}
+}
+
 // Remove removes a symlink and restores the original file or directory
 func (l *Lnk) Remove(filePath string) error {
 	// Get absolute path

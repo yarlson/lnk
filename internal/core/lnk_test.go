@@ -31,6 +31,9 @@ func (suite *CoreTestSuite) SetupTest() {
 	err = os.Chdir(tempDir)
 	suite.Require().NoError(err)
 
+	// Set HOME to temp directory for consistent relative path calculation
+	suite.T().Setenv("HOME", tempDir)
+
 	// Set XDG_CONFIG_HOME to temp directory
 	suite.T().Setenv("XDG_CONFIG_HOME", tempDir)
 
@@ -86,8 +89,8 @@ func (suite *CoreTestSuite) TestCoreFileOperations() {
 	// The repository file will preserve the directory structure
 	lnkDir := filepath.Join(suite.tempDir, "lnk")
 
-	// Find the .bashrc file in the repository (it should be at the relative path)
-	repoFile := filepath.Join(lnkDir, suite.tempDir, ".bashrc")
+	// Find the .bashrc file in the repository (it should be at the relative path from HOME)
+	repoFile := filepath.Join(lnkDir, ".bashrc")
 	suite.FileExists(repoFile)
 
 	// Verify content is preserved
@@ -137,8 +140,8 @@ func (suite *CoreTestSuite) TestCoreDirectoryOperations() {
 	// Check that the repository directory preserves the structure
 	lnkDir := filepath.Join(suite.tempDir, "lnk")
 
-	// The directory should be at the relative path
-	repoDir := filepath.Join(lnkDir, suite.tempDir, "testdir")
+	// The directory should be at the relative path from HOME
+	repoDir := filepath.Join(lnkDir, "testdir")
 	suite.DirExists(repoDir)
 
 	// Remove the directory
@@ -818,6 +821,273 @@ func (suite *CoreTestSuite) TestRunBootstrapScriptNotFound() {
 	err = suite.lnk.RunBootstrapScript("nonexistent.sh")
 	suite.Error(err)
 	suite.Contains(err.Error(), "Bootstrap script not found")
+}
+
+func (suite *CoreTestSuite) TestAddMultiple() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create multiple test files
+	file1 := filepath.Join(suite.tempDir, "file1.txt")
+	file2 := filepath.Join(suite.tempDir, "file2.txt")
+	file3 := filepath.Join(suite.tempDir, "file3.txt")
+
+	content1 := "content1"
+	content2 := "content2"
+	content3 := "content3"
+
+	err = os.WriteFile(file1, []byte(content1), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(file2, []byte(content2), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(file3, []byte(content3), 0644)
+	suite.Require().NoError(err)
+
+	// Test AddMultiple method - should succeed
+	paths := []string{file1, file2, file3}
+	err = suite.lnk.AddMultiple(paths)
+	suite.NoError(err, "AddMultiple should succeed")
+
+	// Verify all files are now symlinks
+	for _, file := range paths {
+		info, err := os.Lstat(file)
+		suite.NoError(err)
+		suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink, "File should be a symlink: %s", file)
+	}
+
+	// Verify all files exist in storage
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	suite.FileExists(filepath.Join(lnkDir, "file1.txt"))
+	suite.FileExists(filepath.Join(lnkDir, "file2.txt"))
+	suite.FileExists(filepath.Join(lnkDir, "file3.txt"))
+
+	// Verify .lnk file contains all entries
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.NoError(err)
+	suite.Equal("file1.txt\nfile2.txt\nfile3.txt\n", string(lnkContent))
+
+	// Verify Git commit was created  
+	commits, err := suite.lnk.GetCommits()
+	suite.NoError(err)
+	suite.T().Logf("Commits: %v", commits)
+	// Should have at least 1 commit for the batch add
+	suite.GreaterOrEqual(len(commits), 1)
+	// The most recent commit should mention multiple files
+	suite.Contains(commits[0], "added 3 files")
+}
+
+func (suite *CoreTestSuite) TestAddMultipleWithConflicts() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create test files
+	file1 := filepath.Join(suite.tempDir, "file1.txt")
+	file2 := filepath.Join(suite.tempDir, "file2.txt")
+	file3 := filepath.Join(suite.tempDir, "file3.txt")
+
+	err = os.WriteFile(file1, []byte("content1"), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(file2, []byte("content2"), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(file3, []byte("content3"), 0644)
+	suite.Require().NoError(err)
+
+	// Add file2 individually first
+	err = suite.lnk.Add(file2)
+	suite.Require().NoError(err)
+
+	// Now try to add all three - should fail due to conflict with file2
+	paths := []string{file1, file2, file3}
+	err = suite.lnk.AddMultiple(paths)
+	suite.Error(err, "AddMultiple should fail due to conflict")
+	suite.Contains(err.Error(), "already managed")
+
+	// Verify no partial changes were made
+	// file1 and file3 should still be regular files, not symlinks
+	info1, err := os.Lstat(file1)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info1.Mode()&os.ModeSymlink, "file1 should not be a symlink")
+
+	info3, err := os.Lstat(file3)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info3.Mode()&os.ModeSymlink, "file3 should not be a symlink")
+
+	// file2 should still be managed (was added before)
+	info2, err := os.Lstat(file2)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info2.Mode()&os.ModeSymlink, "file2 should remain a symlink")
+}
+
+func (suite *CoreTestSuite) TestAddMultipleRollback() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create test files - one will be invalid to force rollback
+	file1 := filepath.Join(suite.tempDir, "file1.txt")
+	file2 := filepath.Join(suite.tempDir, "nonexistent.txt") // This doesn't exist
+	file3 := filepath.Join(suite.tempDir, "file3.txt")
+
+	err = os.WriteFile(file1, []byte("content1"), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(file3, []byte("content3"), 0644)
+	suite.Require().NoError(err)
+	// Note: file2 is intentionally not created
+
+	// Try to add all files - should fail and rollback
+	paths := []string{file1, file2, file3}
+	err = suite.lnk.AddMultiple(paths)
+	suite.Error(err, "AddMultiple should fail due to nonexistent file")
+
+	// Verify rollback - no files should be symlinks
+	info1, err := os.Lstat(file1)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info1.Mode()&os.ModeSymlink, "file1 should not be a symlink after rollback")
+
+	info3, err := os.Lstat(file3)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info3.Mode()&os.ModeSymlink, "file3 should not be a symlink after rollback")
+
+	// Verify no files in storage
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	suite.NoFileExists(filepath.Join(lnkDir, "file1.txt"))
+	suite.NoFileExists(filepath.Join(lnkDir, "file3.txt"))
+
+	// Verify .lnk file is empty or doesn't contain these files
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	if _, err := os.Stat(lnkFile); err == nil {
+		lnkContent, err := os.ReadFile(lnkFile)
+		suite.NoError(err)
+		content := string(lnkContent)
+		suite.NotContains(content, "file1.txt")
+		suite.NotContains(content, "file3.txt")
+	}
+}
+
+func (suite *CoreTestSuite) TestValidateMultiplePaths() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create a mix of valid and invalid paths
+	validFile := filepath.Join(suite.tempDir, "valid.txt")
+	err = os.WriteFile(validFile, []byte("content"), 0644)
+	suite.Require().NoError(err)
+
+	nonexistentFile := filepath.Join(suite.tempDir, "nonexistent.txt")
+	// Don't create this file
+
+	// Create a valid directory
+	validDir := filepath.Join(suite.tempDir, "validdir")
+	err = os.MkdirAll(validDir, 0755)
+	suite.Require().NoError(err)
+
+	// Test validation fails early with detailed error
+	paths := []string{validFile, nonexistentFile, validDir}
+	err = suite.lnk.AddMultiple(paths)
+	suite.Error(err, "Should fail due to nonexistent file")
+	suite.Contains(err.Error(), "validation failed")
+	suite.Contains(err.Error(), "nonexistent.txt")
+
+	// Verify no partial changes were made
+	info, err := os.Lstat(validFile)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "valid file should not be a symlink")
+
+	info, err = os.Lstat(validDir)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "valid directory should not be a symlink")
+}
+
+func (suite *CoreTestSuite) TestAtomicRollbackOnFailure() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create test files
+	file1 := filepath.Join(suite.tempDir, "file1.txt")
+	file2 := filepath.Join(suite.tempDir, "file2.txt")
+	file3 := filepath.Join(suite.tempDir, "file3.txt")
+
+	content1 := "original content 1"
+	content2 := "original content 2"
+	content3 := "original content 3"
+
+	err = os.WriteFile(file1, []byte(content1), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(file2, []byte(content2), 0644)
+	suite.Require().NoError(err)
+	err = os.WriteFile(file3, []byte(content3), 0644)
+	suite.Require().NoError(err)
+
+	// Add file2 individually first to create a conflict
+	err = suite.lnk.Add(file2)
+	suite.Require().NoError(err)
+
+	// Store original states
+	info1Before, err := os.Lstat(file1)
+	suite.Require().NoError(err)
+	info3Before, err := os.Lstat(file3)
+	suite.Require().NoError(err)
+
+	// Try to add all files - should fail and rollback completely
+	paths := []string{file1, file2, file3}
+	err = suite.lnk.AddMultiple(paths)
+	suite.Error(err, "Should fail due to conflict with file2")
+
+	// Verify complete rollback
+	info1After, err := os.Lstat(file1)
+	suite.NoError(err)
+	suite.Equal(info1Before.Mode(), info1After.Mode(), "file1 mode should be unchanged")
+	
+	info3After, err := os.Lstat(file3)
+	suite.NoError(err)
+	suite.Equal(info3Before.Mode(), info3After.Mode(), "file3 mode should be unchanged")
+
+	// Verify original contents are preserved
+	content1After, err := os.ReadFile(file1)
+	suite.NoError(err)
+	suite.Equal(content1, string(content1After), "file1 content should be preserved")
+
+	content3After, err := os.ReadFile(file3)
+	suite.NoError(err)
+	suite.Equal(content3, string(content3After), "file3 content should be preserved")
+
+	// file2 should still be managed (was added before)
+	info2, err := os.Lstat(file2)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info2.Mode()&os.ModeSymlink, "file2 should remain a symlink")
+}
+
+func (suite *CoreTestSuite) TestDetailedErrorMessages() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Test with multiple types of errors
+	validFile := filepath.Join(suite.tempDir, "valid.txt")
+	err = os.WriteFile(validFile, []byte("content"), 0644)
+	suite.Require().NoError(err)
+
+	nonexistentFile := filepath.Join(suite.tempDir, "does-not-exist.txt")
+	alreadyManagedFile := filepath.Join(suite.tempDir, "already-managed.txt")
+	err = os.WriteFile(alreadyManagedFile, []byte("managed"), 0644)
+	suite.Require().NoError(err)
+
+	// Add one file first to create conflict
+	err = suite.lnk.Add(alreadyManagedFile)
+	suite.Require().NoError(err)
+
+	// Test with nonexistent file
+	paths := []string{validFile, nonexistentFile}
+	err = suite.lnk.AddMultiple(paths)
+	suite.Error(err, "Should fail due to nonexistent file")
+	suite.Contains(err.Error(), "validation failed", "Error should mention validation failure")
+	suite.Contains(err.Error(), "does-not-exist.txt", "Error should include specific filename")
+
+	// Test with already managed file
+	paths = []string{validFile, alreadyManagedFile}
+	err = suite.lnk.AddMultiple(paths)
+	suite.Error(err, "Should fail due to already managed file")
+	suite.Contains(err.Error(), "already managed", "Error should mention already managed")
+	suite.Contains(err.Error(), "already-managed.txt", "Error should include specific filename")
 }
 
 func TestCoreSuite(t *testing.T) {

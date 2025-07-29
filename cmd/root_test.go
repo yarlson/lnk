@@ -277,7 +277,7 @@ func (suite *CLITestSuite) TestErrorHandling() {
 			name:        "add help",
 			args:        []string{"add", "--help"},
 			wantErr:     false,
-			outContains: "Moves a file to the lnk repository",
+			outContains: "Moves files to the lnk repository",
 		},
 		{
 			name:        "list help",
@@ -790,8 +790,8 @@ func (suite *CLITestSuite) TestInitWithBootstrap() {
 	err := os.MkdirAll(remoteDir, 0755)
 	suite.Require().NoError(err)
 
-	// Initialize git repo in remote
-	cmd := exec.Command("git", "init", "--bare")
+	// Initialize git repo in remote with main branch
+	cmd := exec.Command("git", "init", "--bare", "--initial-branch=main")
 	cmd.Dir = remoteDir
 	err = cmd.Run()
 	suite.Require().NoError(err)
@@ -835,7 +835,7 @@ touch remote-bootstrap-ran.txt
 	err = cmd.Run()
 	suite.Require().NoError(err)
 
-	cmd = exec.Command("git", "push", "origin", "master")
+	cmd = exec.Command("git", "push", "origin", "main")
 	cmd.Dir = workingDir
 	err = cmd.Run()
 	suite.Require().NoError(err)
@@ -863,8 +863,8 @@ func (suite *CLITestSuite) TestInitWithBootstrapDisabled() {
 	err := os.MkdirAll(remoteDir, 0755)
 	suite.Require().NoError(err)
 
-	// Initialize git repo in remote
-	cmd := exec.Command("git", "init", "--bare")
+	// Initialize git repo in remote with main branch
+	cmd := exec.Command("git", "init", "--bare", "--initial-branch=main")
 	cmd.Dir = remoteDir
 	err = cmd.Run()
 	suite.Require().NoError(err)
@@ -898,7 +898,7 @@ touch should-not-exist.txt
 	err = cmd.Run()
 	suite.Require().NoError(err)
 
-	cmd = exec.Command("git", "push", "origin", "master")
+	cmd = exec.Command("git", "push", "origin", "main")
 	cmd.Dir = workingDir
 	err = cmd.Run()
 	suite.Require().NoError(err)
@@ -915,6 +915,101 @@ touch should-not-exist.txt
 	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
 	markerFile := filepath.Join(lnkDir, "should-not-exist.txt")
 	suite.NoFileExists(markerFile)
+}
+
+func (suite *CLITestSuite) TestAddCommandMultipleFiles() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create multiple test files
+	testFile1 := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile1, []byte("export PATH1"), 0644)
+	suite.Require().NoError(err)
+
+	testFile2 := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile2, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+
+	testFile3 := filepath.Join(suite.tempDir, ".gitconfig")
+	err = os.WriteFile(testFile3, []byte("[user]\n  name = test"), 0644)
+	suite.Require().NoError(err)
+
+	// Test add command with multiple files - should succeed
+	err = suite.runCommand("add", testFile1, testFile2, testFile3)
+	suite.NoError(err, "Adding multiple files should succeed")
+
+	// Check output shows all files were added
+	output := suite.stdout.String()
+	suite.Contains(output, "Added 3 items to lnk")
+	suite.Contains(output, ".bashrc")
+	suite.Contains(output, ".vimrc")
+	suite.Contains(output, ".gitconfig")
+
+	// Verify all files are now symlinks
+	for _, file := range []string{testFile1, testFile2, testFile3} {
+		info, err := os.Lstat(file)
+		suite.NoError(err)
+		suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+	}
+
+	// Verify all files exist in storage
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	suite.FileExists(filepath.Join(lnkDir, ".bashrc"))
+	suite.FileExists(filepath.Join(lnkDir, ".vimrc"))
+	suite.FileExists(filepath.Join(lnkDir, ".gitconfig"))
+
+	// Verify .lnk file contains all entries
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.NoError(err)
+	suite.Equal(".bashrc\n.gitconfig\n.vimrc\n", string(lnkContent))
+}
+
+func (suite *CLITestSuite) TestAddCommandMixedTypes() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create a file
+	testFile := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+
+	// Create a directory with content
+	testDir := filepath.Join(suite.tempDir, ".config", "git")
+	err = os.MkdirAll(testDir, 0755)
+	suite.Require().NoError(err)
+	configFile := filepath.Join(testDir, "config")
+	err = os.WriteFile(configFile, []byte("[user]"), 0644)
+	suite.Require().NoError(err)
+
+	// Test add command with mixed files and directories - should succeed
+	err = suite.runCommand("add", testFile, testDir)
+	suite.NoError(err, "Adding mixed files and directories should succeed")
+
+	// Check output shows both items were added
+	output := suite.stdout.String()
+	suite.Contains(output, "Added 2 items to lnk")
+	suite.Contains(output, ".vimrc")
+	suite.Contains(output, "git")
+
+	// Verify both are now symlinks
+	info1, err := os.Lstat(testFile)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info1.Mode()&os.ModeSymlink)
+
+	info2, err := os.Lstat(testDir)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info2.Mode()&os.ModeSymlink)
+
+	// Verify storage
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	suite.FileExists(filepath.Join(lnkDir, ".vimrc"))
+	suite.DirExists(filepath.Join(lnkDir, ".config", "git"))
+	suite.FileExists(filepath.Join(lnkDir, ".config", "git", "config"))
 }
 
 func TestCLISuite(t *testing.T) {
