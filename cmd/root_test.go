@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -1336,6 +1338,352 @@ func (suite *CLITestSuite) TestUpdatedHelpText() {
 	// Should describe what each flag does
 	suite.Contains(addHelpOutput, "directory contents individually", "Should explain recursive flag")
 	suite.Contains(addHelpOutput, "without making changes", "Should explain dry-run flag")
+}
+
+// Task 3.1: Tests for force flag functionality
+func (suite *CLITestSuite) TestInitCmd_ForceFlag_BypassesSafetyCheck() {
+	// Setup: Create .lnk file to simulate existing content
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	err := os.MkdirAll(lnkDir, 0755)
+	suite.Require().NoError(err)
+
+	// Initialize git repo first
+	cmd := exec.Command("git", "init")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	err = os.WriteFile(lnkFile, []byte(".bashrc\n"), 0644)
+	suite.Require().NoError(err)
+
+	// Create a dummy remote directory for testing
+	remoteDir := filepath.Join(suite.tempDir, "remote")
+	err = os.MkdirAll(remoteDir, 0755)
+	suite.Require().NoError(err)
+	cmd = exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Execute init command with --force flag
+	err = suite.runCommand("init", "-r", remoteDir, "--force")
+	suite.NoError(err, "Force flag should bypass safety check")
+
+	// Verify output shows warning
+	output := suite.stdout.String()
+	suite.Contains(output, "force", "Should show force warning")
+}
+
+func (suite *CLITestSuite) TestInitCmd_NoForceFlag_RespectsSafetyCheck() {
+	// Setup: Create .lnk file to simulate existing content
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	err := os.MkdirAll(lnkDir, 0755)
+	suite.Require().NoError(err)
+
+	// Initialize git repo first
+	cmd := exec.Command("git", "init")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	err = os.WriteFile(lnkFile, []byte(".bashrc\n"), 0644)
+	suite.Require().NoError(err)
+
+	// Create a dummy remote directory for testing
+	remoteDir := filepath.Join(suite.tempDir, "remote")
+	err = os.MkdirAll(remoteDir, 0755)
+	suite.Require().NoError(err)
+	cmd = exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Execute init command without --force flag - should fail
+	err = suite.runCommand("init", "-r", remoteDir)
+	suite.Error(err, "Should respect safety check without force flag")
+	suite.Contains(err.Error(), "already contains managed files")
+}
+
+func (suite *CLITestSuite) TestInitCmd_ForceFlag_ShowsWarning() {
+	// Setup: Create .lnk file to simulate existing content
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	err := os.MkdirAll(lnkDir, 0755)
+	suite.Require().NoError(err)
+
+	// Initialize git repo first
+	cmd := exec.Command("git", "init")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	err = os.WriteFile(lnkFile, []byte(".bashrc\n"), 0644)
+	suite.Require().NoError(err)
+
+	// Create a dummy remote directory for testing
+	remoteDir := filepath.Join(suite.tempDir, "remote")
+	err = os.MkdirAll(remoteDir, 0755)
+	suite.Require().NoError(err)
+	cmd = exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Execute init command with --force flag
+	err = suite.runCommand("init", "-r", remoteDir, "--force")
+	suite.NoError(err, "Force flag should bypass safety check")
+
+	// Verify output shows appropriate warning
+	output := suite.stdout.String()
+	suite.Contains(output, "⚠️", "Should show warning emoji")
+	suite.Contains(output, "overwrite", "Should warn about overwriting")
+}
+
+// Task 4.1: Integration tests for end-to-end workflows
+func (suite *CLITestSuite) TestE2E_InitAddInit_PreventDataLoss() {
+	// Run: lnk init
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create and add test file
+	testFile := filepath.Join(suite.tempDir, ".testfile")
+	err = os.WriteFile(testFile, []byte("important content"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+
+	// Create dummy remote for testing
+	remoteDir := filepath.Join(suite.tempDir, "remote")
+	err = os.MkdirAll(remoteDir, 0755)
+	suite.Require().NoError(err)
+	cmd := exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Run: lnk init -r <remote> → should FAIL
+	err = suite.runCommand("init", "-r", remoteDir)
+	suite.Error(err, "Should prevent data loss")
+	suite.Contains(err.Error(), "already contains managed files")
+
+	// Verify testfile still exists and is managed
+	suite.FileExists(testFile)
+	info, err := os.Lstat(testFile)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink, "File should still be symlink")
+}
+
+func (suite *CLITestSuite) TestE2E_FreshInit_Success() {
+	// Create dummy remote for testing
+	remoteDir := filepath.Join(suite.tempDir, "remote")
+	err := os.MkdirAll(remoteDir, 0755)
+	suite.Require().NoError(err)
+	cmd := exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Fresh init with remote should succeed
+	err = suite.runCommand("init", "-r", remoteDir)
+	suite.NoError(err, "Fresh init should succeed")
+
+	// Verify repository was created
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	suite.DirExists(lnkDir)
+	gitDir := filepath.Join(lnkDir, ".git")
+	suite.DirExists(gitDir)
+
+	// Verify success message
+	output := suite.stdout.String()
+	suite.Contains(output, "Initialized lnk repository")
+	suite.Contains(output, "Cloned from:")
+}
+
+func (suite *CLITestSuite) TestE2E_ForceInit_OverwritesContent() {
+	// Setup: init and add content first
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+
+	testFile := filepath.Join(suite.tempDir, ".testfile")
+	err = os.WriteFile(testFile, []byte("original content"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create dummy remote for testing
+	remoteDir := filepath.Join(suite.tempDir, "remote")
+	err = os.MkdirAll(remoteDir, 0755)
+	suite.Require().NoError(err)
+	cmd := exec.Command("git", "init", "--bare")
+	cmd.Dir = remoteDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Force init should succeed and show warning
+	err = suite.runCommand("init", "-r", remoteDir, "--force")
+	suite.NoError(err, "Force init should succeed")
+
+	// Verify warning was shown
+	output := suite.stdout.String()
+	suite.Contains(output, "⚠️", "Should show warning")
+	suite.Contains(output, "overwrite", "Should warn about overwriting")
+	suite.Contains(output, "Initialized lnk repository")
+}
+
+func (suite *CLITestSuite) TestE2E_ErrorMessage_SuggestsCorrectCommand() {
+	// Setup: init and add content first
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+
+	testFile := filepath.Join(suite.tempDir, ".testfile")
+	err = os.WriteFile(testFile, []byte("important content"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+
+	// Try init with remote - should fail with helpful message
+	err = suite.runCommand("init", "-r", "https://github.com/test/dotfiles.git")
+	suite.Error(err, "Should fail with helpful error")
+
+	// Verify error message suggests correct alternative
+	suite.Contains(err.Error(), "already contains managed files", "Should explain the problem")
+	suite.Contains(err.Error(), "lnk pull", "Should suggest pull command")
+	suite.Contains(err.Error(), "instead of", "Should explain the alternative")
+	suite.Contains(err.Error(), "lnk init -r", "Should show the problematic command")
+}
+
+// Task 6.1: Regression tests to ensure existing functionality unchanged
+func (suite *CLITestSuite) TestRegression_FreshInit_UnchangedBehavior() {
+	// Test that fresh init (no existing content) works exactly as before
+	err := suite.runCommand("init")
+	suite.NoError(err, "Fresh init should work unchanged")
+
+	// Verify same output format and behavior
+	output := suite.stdout.String()
+	suite.Contains(output, "Initialized empty lnk repository")
+	suite.Contains(output, "Location:")
+
+	// Verify repository structure is created correctly
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	suite.DirExists(lnkDir)
+	gitDir := filepath.Join(lnkDir, ".git")
+	suite.DirExists(gitDir)
+}
+
+func (suite *CLITestSuite) TestRegression_ExistingWorkflows_StillWork() {
+	// Test that all existing workflows continue to function
+
+	// 1. Normal init → add → list → remove workflow
+	err := suite.runCommand("init")
+	suite.NoError(err, "Init should work")
+	suite.stdout.Reset()
+
+	// Create and add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", testFile)
+	suite.NoError(err, "Add should work")
+	suite.stdout.Reset()
+
+	// List files
+	err = suite.runCommand("list")
+	suite.NoError(err, "List should work")
+	output := suite.stdout.String()
+	suite.Contains(output, ".bashrc", "Should list added file")
+	suite.stdout.Reset()
+
+	// Remove file
+	err = suite.runCommand("rm", testFile)
+	suite.NoError(err, "Remove should work")
+
+	// Verify file is restored as regular file
+	info, err := os.Lstat(testFile)
+	suite.NoError(err)
+	suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "File should be regular after remove")
+}
+
+func (suite *CLITestSuite) TestRegression_GitOperations_Unaffected() {
+	// Test that Git operations continue to work normally
+	err := suite.runCommand("init")
+	suite.NoError(err)
+
+	// Add a file to create commits
+	testFile := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", testFile)
+	suite.NoError(err)
+
+	// Verify Git repository structure and commits are normal
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+
+	// Check that commits are created normally
+	cmd := exec.Command("git", "log", "--oneline", "--format=%s")
+	cmd.Dir = lnkDir
+	output, err := cmd.Output()
+	suite.NoError(err, "Git log should work")
+
+	commits := string(output)
+	suite.Contains(commits, "lnk: added .vimrc", "Should have normal commit message")
+
+	// Check that git status works
+	cmd = exec.Command("git", "status", "--porcelain")
+	cmd.Dir = lnkDir
+	statusOutput, err := cmd.Output()
+	suite.NoError(err, "Git status should work")
+	suite.Empty(strings.TrimSpace(string(statusOutput)), "Working directory should be clean")
+}
+
+func (suite *CLITestSuite) TestRegression_PerformanceImpact_Minimal() {
+	// Test that the new safety checks don't significantly impact performance
+
+	// Simple performance check: ensure a single init completes quickly
+	start := time.Now()
+	err := suite.runCommand("init")
+	elapsed := time.Since(start)
+
+	suite.NoError(err, "Init should succeed")
+	suite.Less(elapsed, 2*time.Second, "Init should complete quickly")
+
+	// Test safety check performance on existing repository
+	suite.stdout.Reset()
+	start = time.Now()
+	err = suite.runCommand("init", "-r", "dummy-url")
+	elapsed = time.Since(start)
+
+	// Should fail quickly due to safety check (not hang)
+	suite.Error(err, "Should fail due to safety check")
+	suite.Less(elapsed, 1*time.Second, "Safety check should be fast")
+}
+
+// Task 7.1: Tests for help documentation
+func (suite *CLITestSuite) TestInitCommand_HelpText_MentionsForceFlag() {
+	err := suite.runCommand("init", "--help")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "--force", "Help should mention force flag")
+	suite.Contains(output, "overwrite", "Help should explain force behavior")
+}
+
+func (suite *CLITestSuite) TestInitCommand_HelpText_ExplainsDataProtection() {
+	err := suite.runCommand("init", "--help")
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	// Should explain what the command does
+	suite.Contains(output, "Creates", "Should explain what init does")
+	suite.Contains(output, "lnk directory", "Should mention lnk directory")
+
+	// Should warn about the force flag risks
+	suite.Contains(output, "WARNING", "Should warn about force flag risks")
+	suite.Contains(output, "overwrite existing content", "Should mention overwrite risk")
 }
 
 func TestCLISuite(t *testing.T) {

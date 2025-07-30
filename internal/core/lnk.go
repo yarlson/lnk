@@ -46,6 +46,34 @@ func NewLnk(opts ...Option) *Lnk {
 	return lnk
 }
 
+// HasUserContent checks if the repository contains managed files
+// by looking for .lnk tracker files (common or host-specific)
+func (l *Lnk) HasUserContent() bool {
+	// Check for common tracker file
+	commonTracker := filepath.Join(l.repoPath, ".lnk")
+	if _, err := os.Stat(commonTracker); err == nil {
+		return true
+	}
+
+	// Check for host-specific tracker files if host is set
+	if l.host != "" {
+		hostTracker := filepath.Join(l.repoPath, fmt.Sprintf(".lnk.%s", l.host))
+		if _, err := os.Stat(hostTracker); err == nil {
+			return true
+		}
+	} else {
+		// If no specific host is set, check for any host-specific tracker files
+		// This handles cases where we want to detect any managed content
+		pattern := filepath.Join(l.repoPath, ".lnk.*")
+		matches, err := filepath.Glob(pattern)
+		if err == nil && len(matches) > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
 // GetCurrentHostname returns the current system hostname
 func GetCurrentHostname() (string, error) {
 	hostname, err := os.Hostname()
@@ -119,7 +147,18 @@ func (l *Lnk) Init() error {
 
 // InitWithRemote initializes the lnk repository, optionally cloning from a remote
 func (l *Lnk) InitWithRemote(remoteURL string) error {
+	return l.InitWithRemoteForce(remoteURL, false)
+}
+
+// InitWithRemoteForce initializes the lnk repository with optional force override
+func (l *Lnk) InitWithRemoteForce(remoteURL string, force bool) error {
 	if remoteURL != "" {
+		// Safety check: prevent data loss by checking for existing managed files
+		if l.HasUserContent() {
+			if !force {
+				return fmt.Errorf("❌ Directory \033[31m%s\033[0m already contains managed files\n   💡 Use 'lnk pull' to update from remote instead of 'lnk init -r'", l.repoPath)
+			}
+		}
 		// Clone from remote
 		return l.Clone(remoteURL)
 	}
