@@ -54,6 +54,9 @@ lnk init -r git@github.com:user/dotfiles.git
 # Skip automatic bootstrap
 lnk init -r git@github.com:user/dotfiles.git --no-bootstrap
 
+# Force initialization (WARNING: overwrites existing managed files)
+lnk init -r git@github.com:user/dotfiles.git --force
+
 # Run bootstrap script manually
 lnk bootstrap
 ```
@@ -102,6 +105,33 @@ After:  ~/.ssh/config -> ~/.config/lnk/laptop.lnk/.ssh/config (symlink)
 ```
 
 Your files live in `~/.config/lnk` (a Git repo). Common files go in the root, host-specific files go in `<host>.lnk/` subdirectories. Lnk creates symlinks back to original locations. Edit files normally, use Git normally.
+
+## Safety Features
+
+Lnk includes built-in safety checks to prevent accidental data loss:
+
+### Data Loss Prevention
+
+```bash
+# This will be blocked if you already have managed files
+lnk init -r git@github.com:user/dotfiles.git
+# ❌ Directory ~/.config/lnk already contains managed files
+#    💡 Use 'lnk pull' to update from remote instead of 'lnk init -r'
+
+# Use pull instead to safely update
+lnk pull
+
+# Or force if you understand the risks (shows warning only when needed)
+lnk init -r git@github.com:user/dotfiles.git --force
+# ⚠️  Using --force flag: This will overwrite existing managed files
+#    💡 Only use this if you understand the risks
+```
+
+### Smart Warnings
+
+- **Contextual alerts**: Warnings only appear when there are actually managed files to overwrite
+- **Clear guidance**: Error messages suggest the correct command to use
+- **Force override**: Advanced users can bypass safety checks when needed
 
 ## Bootstrap Support
 
@@ -276,7 +306,7 @@ lnk pull                                   # Get updates (work config won't affe
 
 ## Commands
 
-- `lnk init [-r remote] [--no-bootstrap]` - Create repo (runs bootstrap automatically)
+- `lnk init [-r remote] [--no-bootstrap] [--force]` - Create repo (runs bootstrap automatically)
 - `lnk add [--host HOST] [--recursive] [--dry-run] <files>...` - Move files to repo, create symlinks
 - `lnk rm [--host HOST] <files>` - Move files back, remove symlinks
 - `lnk list [--host HOST] [--all]` - List files managed by lnk
@@ -293,6 +323,7 @@ lnk pull                                   # Get updates (work config won't affe
 - `--all` - Show all configurations (common + all hosts) when listing
 - `-r, --remote URL` - Clone from remote URL when initializing
 - `--no-bootstrap` - Skip automatic execution of bootstrap script after cloning
+- `--force` - Force initialization even if directory contains managed files (WARNING: overwrites existing content)
 
 ### Add Command Examples
 
@@ -321,17 +352,18 @@ lnk add --host work ~/.gitconfig ~/.ssh/config ~/.npmrc
 - **Bulk operations** (multiple files, atomic transactions)
 - **Recursive processing** (directory contents individually)
 - **Preview mode** (dry-run for safety)
+- **Data loss prevention** (safety checks with contextual warnings)
 - **Git-native** (standard Git repo, no special formats)
 
 ## Alternatives
 
-| Tool    | Complexity | Why choose it                                                              |
-| ------- | ---------- | -------------------------------------------------------------------------- |
-| **lnk** | Minimal    | Just works, no config, Git-native, multihost, bootstrap, bulk ops, dry-run |
-| chezmoi | High       | Templates, encryption, cross-platform                                      |
-| yadm    | Medium     | Git power user, encryption                                                 |
-| dotbot  | Low        | YAML config, basic features                                                |
-| stow    | Low        | Perl, symlink only                                                         |
+| Tool    | Complexity | Why choose it                                                                             |
+| ------- | ---------- | ----------------------------------------------------------------------------------------- |
+| **lnk** | Minimal    | Just works, no config, Git-native, multihost, bootstrap, bulk ops, dry-run, safety checks |
+| chezmoi | High       | Templates, encryption, cross-platform                                                     |
+| yadm    | Medium     | Git power user, encryption                                                                |
+| dotbot  | Low        | YAML config, basic features                                                               |
+| stow    | Low        | Perl, symlink only                                                                        |
 
 ## Contributing
 

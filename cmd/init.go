@@ -15,9 +15,17 @@ func newInitCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			remote, _ := cmd.Flags().GetString("remote")
 			noBootstrap, _ := cmd.Flags().GetBool("no-bootstrap")
+			force, _ := cmd.Flags().GetBool("force")
 
 			lnk := core.NewLnk()
-			if err := lnk.InitWithRemote(remote); err != nil {
+
+			// Show warning when force is used and there are managed files to overwrite
+			if force && remote != "" && lnk.HasUserContent() {
+				printf(cmd, "⚠️  \033[33mUsing --force flag: This will overwrite existing managed files\033[0m\n")
+				printf(cmd, "   💡 Only use this if you understand the risks\n\n")
+			}
+
+			if err := lnk.InitWithRemoteForce(remote, force); err != nil {
 				return err
 			}
 
@@ -69,5 +77,6 @@ func newInitCmd() *cobra.Command {
 
 	cmd.Flags().StringP("remote", "r", "", "Clone from remote URL instead of creating empty repository")
 	cmd.Flags().Bool("no-bootstrap", false, "Skip automatic execution of bootstrap script after cloning")
+	cmd.Flags().Bool("force", false, "Force initialization even if directory contains managed files (WARNING: This will overwrite existing content)")
 	return cmd
 }
