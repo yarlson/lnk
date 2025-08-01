@@ -1686,6 +1686,125 @@ func (suite *CLITestSuite) TestInitCommand_HelpText_ExplainsDataProtection() {
 	suite.Contains(output, "overwrite existing content", "Should mention overwrite risk")
 }
 
+// TestPushPullWithDifferentBranches tests push/pull operations with different default branch names
+func (suite *CLITestSuite) TestPushPullWithDifferentBranches() {
+	testCases := []struct {
+		name        string
+		branchName  string
+		setupRemote func(remoteDir string) error
+	}{
+		{
+			name:       "master branch",
+			branchName: "master",
+			setupRemote: func(remoteDir string) error {
+				cmd := exec.Command("git", "init", "--bare", "--initial-branch=master")
+				cmd.Dir = remoteDir
+				return cmd.Run()
+			},
+		},
+		{
+			name:       "main branch",
+			branchName: "main",
+			setupRemote: func(remoteDir string) error {
+				cmd := exec.Command("git", "init", "--bare", "--initial-branch=main")
+				cmd.Dir = remoteDir
+				return cmd.Run()
+			},
+		},
+		{
+			name:       "custom branch",
+			branchName: "develop",
+			setupRemote: func(remoteDir string) error {
+				cmd := exec.Command("git", "init", "--bare", "--initial-branch=develop")
+				cmd.Dir = remoteDir
+				return cmd.Run()
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		suite.Run(tc.name, func() {
+			// Create a separate temp directory for this test case
+			testDir, err := os.MkdirTemp("", "lnk-push-pull-test-*")
+			suite.Require().NoError(err)
+			defer func() { _ = os.RemoveAll(testDir) }()
+
+			// Save current dir and change to test dir
+			originalDir, err := os.Getwd()
+			suite.Require().NoError(err)
+			defer func() { _ = os.Chdir(originalDir) }()
+
+			err = os.Chdir(testDir)
+			suite.Require().NoError(err)
+
+			// Set HOME to test directory
+			suite.T().Setenv("HOME", testDir)
+			suite.T().Setenv("XDG_CONFIG_HOME", testDir)
+
+			// Create remote repository
+			remoteDir := filepath.Join(testDir, "remote.git")
+			err = os.MkdirAll(remoteDir, 0755)
+			suite.Require().NoError(err)
+
+			err = tc.setupRemote(remoteDir)
+			suite.Require().NoError(err)
+
+			// Initialize lnk with remote
+			err = suite.runCommand("init", "--remote", remoteDir)
+			suite.Require().NoError(err)
+
+			// Switch to the test branch if not main/master (since init creates main by default)
+			if tc.branchName != "main" {
+				lnkDir := filepath.Join(testDir, "lnk")
+				cmd := exec.Command("git", "checkout", "-b", tc.branchName)
+				cmd.Dir = lnkDir
+				_, err = cmd.CombinedOutput()
+				suite.Require().NoError(err)
+			}
+
+			// Add a test file
+			testFile := filepath.Join(testDir, ".testrc")
+			err = os.WriteFile(testFile, []byte("test config"), 0644)
+			suite.Require().NoError(err)
+
+			err = suite.runCommand("add", testFile)
+			suite.Require().NoError(err)
+
+			// Test push operation
+			err = suite.runCommand("push", "test push with "+tc.branchName)
+			suite.Require().NoError(err, "Push should work with %s branch", tc.branchName)
+
+			// Create another test directory to simulate pulling from another machine
+			pullTestDir, err := os.MkdirTemp("", "lnk-pull-test-*")
+			suite.Require().NoError(err)
+			defer func() { _ = os.RemoveAll(pullTestDir) }()
+
+			err = os.Chdir(pullTestDir)
+			suite.Require().NoError(err)
+
+			// Set HOME for pull test
+			suite.T().Setenv("HOME", pullTestDir)
+			suite.T().Setenv("XDG_CONFIG_HOME", pullTestDir)
+
+			// Clone and test pull
+			err = suite.runCommand("init", "--remote", remoteDir)
+			suite.Require().NoError(err)
+
+			err = suite.runCommand("pull")
+			suite.Require().NoError(err, "Pull should work with %s branch", tc.branchName)
+
+			// Verify the file was pulled correctly
+			lnkDir := filepath.Join(pullTestDir, "lnk")
+			pulledFile := filepath.Join(lnkDir, ".testrc")
+			suite.FileExists(pulledFile, "File should exist after pull with %s branch", tc.branchName)
+
+			content, err := os.ReadFile(pulledFile)
+			suite.Require().NoError(err)
+			suite.Equal("test config", string(content), "File content should match after pull with %s branch", tc.branchName)
+		})
+	}
+}
+
 func TestCLISuite(t *testing.T) {
 	suite.Run(t, new(CLITestSuite))
 }
