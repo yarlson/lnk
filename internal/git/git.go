@@ -437,7 +437,7 @@ func (g *Git) Push() error {
 		return &PushError{Reason: err.Error(), Err: err}
 	}
 
-	cmd := exec.Command("git", "push", "-u", "origin", "main")
+	cmd := exec.Command("git", "push", "-u", "origin")
 	cmd.Dir = g.repoPath
 
 	output, err := cmd.CombinedOutput()
@@ -456,7 +456,7 @@ func (g *Git) Pull() error {
 		return &PullError{Reason: err.Error(), Err: err}
 	}
 
-	cmd := exec.Command("git", "pull", "origin", "main")
+	cmd := exec.Command("git", "pull", "origin")
 	cmd.Dir = g.repoPath
 
 	output, err := cmd.CombinedOutput()
