@@ -1,29 +1,7 @@
 package git
 
-import "fmt"
-
-// ANSI color codes for consistent formatting
-const (
-	colorReset  = "\033[0m"
-	colorBold   = "\033[1m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-)
-
-// formatError creates a consistently formatted error message with ❌ prefix
-func formatError(message string, args ...interface{}) string {
-	return fmt.Sprintf("❌ "+message, args...)
-}
-
-// formatURL formats a URL with styling
-func formatURL(url string) string {
-	return fmt.Sprintf("%s%s%s", colorBold, url, colorReset)
-}
-
-// formatRemote formats a remote name with styling
-func formatRemote(remote string) string {
-	return fmt.Sprintf("%s%s%s", colorGreen, remote, colorReset)
-}
+// Structured errors that separate content from presentation
+// These will be formatted by the cmd package based on user preferences
 
 // GitInitError represents an error during git initialization
 type GitInitError struct {
@@ -32,7 +10,7 @@ type GitInitError struct {
 }
 
 func (e *GitInitError) Error() string {
-	return formatError("Failed to initialize git repository. Please ensure git is installed and try again.")
+	return "Failed to initialize git repository. Please ensure git is installed and try again."
 }
 
 func (e *GitInitError) Unwrap() error {
@@ -45,7 +23,7 @@ type BranchSetupError struct {
 }
 
 func (e *BranchSetupError) Error() string {
-	return formatError("Failed to set up the default branch. Please check your git installation.")
+	return "Failed to set up the default branch. Please check your git installation."
 }
 
 func (e *BranchSetupError) Unwrap() error {
@@ -60,8 +38,19 @@ type RemoteExistsError struct {
 }
 
 func (e *RemoteExistsError) Error() string {
-	return formatError("Remote %s is already configured with a different repository (%s). Cannot add %s.",
-		formatRemote(e.Remote), formatURL(e.ExistingURL), formatURL(e.NewURL))
+	return "Remote " + e.Remote + " is already configured with a different repository (" + e.ExistingURL + "). Cannot add " + e.NewURL + "."
+}
+
+func (e *RemoteExistsError) GetRemote() string {
+	return e.Remote
+}
+
+func (e *RemoteExistsError) GetExistingURL() string {
+	return e.ExistingURL
+}
+
+func (e *RemoteExistsError) GetNewURL() string {
+	return e.NewURL
 }
 
 func (e *RemoteExistsError) Unwrap() error {
@@ -79,22 +68,26 @@ func (e *GitCommandError) Error() string {
 	// Provide user-friendly messages based on common command types
 	switch e.Command {
 	case "add":
-		return formatError("Failed to stage files for commit. Please check file permissions and try again.")
+		return "Failed to stage files for commit. Please check file permissions and try again."
 	case "commit":
-		return formatError("Failed to create commit. Please ensure you have staged changes and try again.")
+		return "Failed to create commit. Please ensure you have staged changes and try again."
 	case "remote add":
-		return formatError("Failed to add remote repository. Please check the repository URL and try again.")
+		return "Failed to add remote repository. Please check the repository URL and try again."
 	case "rm":
-		return formatError("Failed to remove file from git tracking. Please check if the file exists and try again.")
+		return "Failed to remove file from git tracking. Please check if the file exists and try again."
 	case "log":
-		return formatError("Failed to retrieve commit history.")
+		return "Failed to retrieve commit history."
 	case "remote":
-		return formatError("Failed to retrieve remote repository information.")
+		return "Failed to retrieve remote repository information."
 	case "clone":
-		return formatError("Failed to clone repository. Please check the repository URL and your network connection.")
+		return "Failed to clone repository. Please check the repository URL and your network connection."
 	default:
-		return formatError("Git operation failed. Please check your repository state and try again.")
+		return "Git operation failed. Please check your repository state and try again."
 	}
+}
+
+func (e *GitCommandError) GetCommand() string {
+	return e.Command
 }
 
 func (e *GitCommandError) Unwrap() error {
@@ -105,7 +98,7 @@ func (e *GitCommandError) Unwrap() error {
 type NoRemoteError struct{}
 
 func (e *NoRemoteError) Error() string {
-	return formatError("No remote repository is configured. Please add a remote repository first.")
+	return "No remote repository is configured. Please add a remote repository first."
 }
 
 func (e *NoRemoteError) Unwrap() error {
@@ -119,7 +112,11 @@ type RemoteNotFoundError struct {
 }
 
 func (e *RemoteNotFoundError) Error() string {
-	return formatError("Remote repository %s is not configured.", formatRemote(e.Remote))
+	return "Remote repository " + e.Remote + " is not configured."
+}
+
+func (e *RemoteNotFoundError) GetRemote() string {
+	return e.Remote
 }
 
 func (e *RemoteNotFoundError) Unwrap() error {
@@ -133,7 +130,7 @@ type GitConfigError struct {
 }
 
 func (e *GitConfigError) Error() string {
-	return formatError("Failed to configure git settings. Please check your git installation.")
+	return "Failed to configure git settings. Please check your git installation."
 }
 
 func (e *GitConfigError) Unwrap() error {
@@ -146,7 +143,7 @@ type UncommittedChangesError struct {
 }
 
 func (e *UncommittedChangesError) Error() string {
-	return formatError("Failed to check repository status. Please verify your git repository is valid.")
+	return "Failed to check repository status. Please verify your git repository is valid."
 }
 
 func (e *UncommittedChangesError) Unwrap() error {
@@ -160,7 +157,11 @@ type DirectoryRemovalError struct {
 }
 
 func (e *DirectoryRemovalError) Error() string {
-	return formatError("Failed to prepare directory for operation. Please check directory permissions.")
+	return "Failed to prepare directory for operation. Please check directory permissions."
+}
+
+func (e *DirectoryRemovalError) GetPath() string {
+	return e.Path
 }
 
 func (e *DirectoryRemovalError) Unwrap() error {
@@ -174,7 +175,11 @@ type DirectoryCreationError struct {
 }
 
 func (e *DirectoryCreationError) Error() string {
-	return formatError("Failed to create directory. Please check permissions and available disk space.")
+	return "Failed to create directory. Please check permissions and available disk space."
+}
+
+func (e *DirectoryCreationError) GetPath() string {
+	return e.Path
 }
 
 func (e *DirectoryCreationError) Unwrap() error {
@@ -190,9 +195,13 @@ type PushError struct {
 
 func (e *PushError) Error() string {
 	if e.Reason != "" {
-		return formatError("Cannot push changes: %s", e.Reason)
+		return "Cannot push changes: " + e.Reason
 	}
-	return formatError("Failed to push changes to remote repository. Please check your network connection and repository permissions.")
+	return "Failed to push changes to remote repository. Please check your network connection and repository permissions."
+}
+
+func (e *PushError) GetReason() string {
+	return e.Reason
 }
 
 func (e *PushError) Unwrap() error {
@@ -208,11 +217,33 @@ type PullError struct {
 
 func (e *PullError) Error() string {
 	if e.Reason != "" {
-		return formatError("Cannot pull changes: %s", e.Reason)
+		return "Cannot pull changes: " + e.Reason
 	}
-	return formatError("Failed to pull changes from remote repository. Please check your network connection and resolve any conflicts.")
+	return "Failed to pull changes from remote repository. Please check your network connection and resolve any conflicts."
+}
+
+func (e *PullError) GetReason() string {
+	return e.Reason
 }
 
 func (e *PullError) Unwrap() error {
 	return e.Err
+}
+
+// ErrorWithPath is an interface for git errors that have an associated file path
+type ErrorWithPath interface {
+	error
+	GetPath() string
+}
+
+// ErrorWithRemote is an interface for git errors that involve a remote
+type ErrorWithRemote interface {
+	error
+	GetRemote() string
+}
+
+// ErrorWithReason is an interface for git errors that have a specific reason
+type ErrorWithReason interface {
+	error
+	GetReason() string
 }

@@ -1,10 +1,15 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/fs"
+	"github.com/yarlson/lnk/internal/git"
 )
 
 var (
@@ -14,6 +19,12 @@ var (
 
 // NewRootCommand creates a new root command (testable)
 func NewRootCommand() *cobra.Command {
+	var (
+		colors  string
+		emoji   bool
+		noEmoji bool
+	)
+
 	rootCmd := &cobra.Command{
 		Use:   "lnk",
 		Short: "🔗 Dotfiles, linked. No fluff.",
@@ -42,7 +53,28 @@ Supports both common configurations, host-specific setups, and bulk operations f
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       fmt.Sprintf("%s (built %s)", version, buildTime),
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// Handle emoji flag logic
+			emojiEnabled := emoji
+			if noEmoji {
+				emojiEnabled = false
+			}
+			err := SetGlobalConfig(colors, emojiEnabled)
+			if err != nil {
+				return err
+			}
+
+			return nil
+		},
 	}
+
+	// Add global flags for output formatting
+	rootCmd.PersistentFlags().StringVar(&colors, "colors", "auto", "when to use colors (auto, always, never)")
+	rootCmd.PersistentFlags().BoolVar(&emoji, "emoji", true, "enable emoji in output")
+	rootCmd.PersistentFlags().BoolVar(&noEmoji, "no-emoji", false, "disable emoji in output")
+
+	// Mark emoji flags as mutually exclusive
+	rootCmd.MarkFlagsMutuallyExclusive("emoji", "no-emoji")
 
 	// Add subcommands
 	rootCmd.AddCommand(newInitCmd())
@@ -66,7 +98,98 @@ func SetVersion(v, bt string) {
 func Execute() {
 	rootCmd := NewRootCommand()
 	if err := rootCmd.Execute(); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
+		DisplayError(err)
 		os.Exit(1)
 	}
+}
+
+// DisplayError formats and displays an error with appropriate styling
+func DisplayError(err error) {
+	w := GetErrorWriter()
+
+	// Handle structured errors from core package
+	var lnkErr *core.LnkError
+	if errors.As(err, &lnkErr) {
+		w.Write(Error(lnkErr.Message))
+		if lnkErr.Path != "" {
+			w.WritelnString("").
+				WriteString("   ").
+				Write(Colored(lnkErr.Path, ColorRed))
+		}
+		if lnkErr.Suggestion != "" {
+			w.WritelnString("").
+				WriteString("   ").
+				Write(Info(lnkErr.Suggestion))
+		}
+		w.WritelnString("")
+		return
+	}
+
+	// Handle structured errors from fs package
+	var pathErr fs.ErrorWithPath
+	if errors.As(err, &pathErr) {
+		w.Write(Error(err.Error()))
+		if pathErr.GetPath() != "" {
+			w.WritelnString("").
+				WriteString("   ").
+				Write(Colored(pathErr.GetPath(), ColorRed))
+		}
+		var suggErr fs.ErrorWithSuggestion
+		if errors.As(err, &suggErr) {
+			w.WritelnString("").
+				WriteString("   ").
+				Write(Info(suggErr.GetSuggestion()))
+		}
+		w.WritelnString("")
+		return
+	}
+
+	// Handle fs errors that only have suggestions
+	var suggErr fs.ErrorWithSuggestion
+	if errors.As(err, &suggErr) {
+		w.Write(Error(err.Error())).
+			WritelnString("").
+			WriteString("   ").
+			Write(Info(suggErr.GetSuggestion())).
+			WritelnString("")
+		return
+	}
+
+	// Handle git errors with paths
+	var gitPathErr git.ErrorWithPath
+	if errors.As(err, &gitPathErr) {
+		w.Write(Error(err.Error())).
+			WritelnString("").
+			WriteString("   ").
+			Write(Colored(gitPathErr.GetPath(), ColorRed)).
+			WritelnString("")
+		return
+	}
+
+	// Handle git errors with remotes
+	var gitRemoteErr git.ErrorWithRemote
+	if errors.As(err, &gitRemoteErr) {
+		w.Write(Error(err.Error())).
+			WritelnString("").
+			WriteString("   Remote: ").
+			Write(Colored(gitRemoteErr.GetRemote(), ColorCyan)).
+			WritelnString("")
+		return
+	}
+
+	// Handle git errors with reasons
+	var gitReasonErr git.ErrorWithReason
+	if errors.As(err, &gitReasonErr) {
+		w.Write(Error(err.Error()))
+		if gitReasonErr.GetReason() != "" {
+			w.WritelnString("").
+				WriteString("   Reason: ").
+				Write(Colored(gitReasonErr.GetReason(), ColorYellow))
+		}
+		w.WritelnString("")
+		return
+	}
+
+	// Handle generic errors
+	w.Writeln(Error(err.Error()))
 }

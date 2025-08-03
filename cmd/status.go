@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
+
 	"github.com/yarlson/lnk/internal/core"
 )
 
@@ -36,51 +39,93 @@ func newStatusCmd() *cobra.Command {
 }
 
 func displayDirtyStatus(cmd *cobra.Command, status *core.StatusInfo) {
-	printf(cmd, "⚠️  \033[1;33mRepository has uncommitted changes\033[0m\n")
-	printf(cmd, "   📡 Remote: \033[36m%s\033[0m\n", status.Remote)
+	w := GetWriter(cmd)
+
+	w.Writeln(Warning("Repository has uncommitted changes")).
+		WriteString("   ").
+		Write(Message{Text: "Remote: ", Emoji: "📡"}).
+		Writeln(Colored(status.Remote, ColorCyan))
 
 	if status.Ahead == 0 && status.Behind == 0 {
-		printf(cmd, "\n💡 Run \033[1mgit add && git commit\033[0m in \033[36m~/.config/lnk\033[0m or \033[1mlnk push\033[0m to commit changes\n")
+		w.WritelnString("").
+			Write(Info("Run ")).
+			Write(Bold("git add && git commit")).
+			WriteString(" in ").
+			Write(Colored("~/.config/lnk", ColorCyan)).
+			WriteString(" or ").
+			Write(Bold("lnk push")).
+			WritelnString(" to commit changes")
 		return
 	}
 
-	printf(cmd, "\n")
+	w.WritelnString("")
 	displayAheadBehindInfo(cmd, status, true)
-	printf(cmd, "\n💡 Run \033[1mgit add && git commit\033[0m in \033[36m~/.config/lnk\033[0m or \033[1mlnk push\033[0m to commit changes\n")
+	w.WritelnString("").
+		Write(Info("Run ")).
+		Write(Bold("git add && git commit")).
+		WriteString(" in ").
+		Write(Colored("~/.config/lnk", ColorCyan)).
+		WriteString(" or ").
+		Write(Bold("lnk push")).
+		WritelnString(" to commit changes")
 }
 
 func displayUpToDateStatus(cmd *cobra.Command, status *core.StatusInfo) {
-	printf(cmd, "✅ \033[1;32mRepository is up to date\033[0m\n")
-	printf(cmd, "   📡 Synced with \033[36m%s\033[0m\n", status.Remote)
+	w := GetWriter(cmd)
+
+	w.Writeln(Success("Repository is up to date")).
+		WriteString("   ").
+		Write(Message{Text: "Synced with ", Emoji: "📡"}).
+		Writeln(Colored(status.Remote, ColorCyan))
 }
 
 func displaySyncStatus(cmd *cobra.Command, status *core.StatusInfo) {
-	printf(cmd, "📊 \033[1mRepository Status\033[0m\n")
-	printf(cmd, "   📡 Remote: \033[36m%s\033[0m\n", status.Remote)
-	printf(cmd, "\n")
+	w := GetWriter(cmd)
+
+	w.Writeln(Message{Text: "Repository Status", Emoji: "📊", Bold: true}).
+		WriteString("   ").
+		Write(Message{Text: "Remote: ", Emoji: "📡"}).
+		Writeln(Colored(status.Remote, ColorCyan)).
+		WritelnString("")
 
 	displayAheadBehindInfo(cmd, status, false)
 
 	if status.Ahead > 0 && status.Behind == 0 {
-		printf(cmd, "\n💡 Run \033[1mlnk push\033[0m to sync your changes\n")
+		w.WritelnString("").
+			Write(Info("Run ")).
+			Write(Bold("lnk push")).
+			WritelnString(" to sync your changes")
 	} else if status.Behind > 0 {
-		printf(cmd, "\n💡 Run \033[1mlnk pull\033[0m to get latest changes\n")
+		w.WritelnString("").
+			Write(Info("Run ")).
+			Write(Bold("lnk pull")).
+			WritelnString(" to get latest changes")
 	}
 }
 
 func displayAheadBehindInfo(cmd *cobra.Command, status *core.StatusInfo, isDirty bool) {
+	w := GetWriter(cmd)
+
 	if status.Ahead > 0 {
 		commitText := getCommitText(status.Ahead)
 		if isDirty {
-			printf(cmd, "   ⬆️ \033[1;33m%d %s ahead\033[0m (excluding uncommitted changes)\n", status.Ahead, commitText)
+			w.WriteString("   ").
+				Write(Message{Text: fmt.Sprintf("%d %s ahead", status.Ahead, commitText), Emoji: "⬆️", Color: ColorBrightYellow, Bold: true}).
+				WritelnString(" (excluding uncommitted changes)")
 		} else {
-			printf(cmd, "   ⬆️ \033[1;33m%d %s ahead\033[0m - ready to push\n", status.Ahead, commitText)
+			w.WriteString("   ").
+				Write(Message{Text: fmt.Sprintf("%d %s ahead", status.Ahead, commitText), Emoji: "⬆️", Color: ColorBrightYellow, Bold: true}).
+				WritelnString(" - ready to push")
 		}
 	}
 
 	if status.Behind > 0 {
 		commitText := getCommitText(status.Behind)
-		printf(cmd, "   ⬇️ \033[1;31m%d %s behind\033[0m - run \033[1mlnk pull\033[0m\n", status.Behind, commitText)
+		w.WriteString("   ").
+			Write(Message{Text: fmt.Sprintf("%d %s behind", status.Behind, commitText), Emoji: "⬇️", Color: ColorBrightRed, Bold: true}).
+			WriteString(" - run ").
+			Write(Bold("lnk pull")).
+			WritelnString("")
 	}
 }
 

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+
 	"github.com/yarlson/lnk/internal/core"
 )
 
@@ -14,6 +15,7 @@ func newBootstrapCmd() *cobra.Command {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			lnk := core.NewLnk()
+			w := GetWriter(cmd)
 
 			scriptPath, err := lnk.FindBootstrapScript()
 			if err != nil {
@@ -21,25 +23,40 @@ func newBootstrapCmd() *cobra.Command {
 			}
 
 			if scriptPath == "" {
-				printf(cmd, "💡 \033[33mNo bootstrap script found\033[0m\n")
-				printf(cmd, "   📝 Create a \033[1mbootstrap.sh\033[0m file in your dotfiles repository:\n")
-				printf(cmd, "      \033[90m#!/bin/bash\033[0m\n")
-				printf(cmd, "      \033[90mecho \"Setting up environment...\"\033[0m\n")
-				printf(cmd, "      \033[90m# Your setup commands here\033[0m\n")
-				return nil
+				w.Writeln(Info("No bootstrap script found")).
+					WriteString("   ").
+					Write(Message{Text: "Create a ", Emoji: "📝"}).
+					Write(Bold("bootstrap.sh")).
+					WritelnString(" file in your dotfiles repository:").
+					WriteString("      ").
+					Writeln(Colored("#!/bin/bash", ColorGray)).
+					WriteString("      ").
+					Writeln(Colored("echo \"Setting up environment...\"", ColorGray)).
+					WriteString("      ").
+					Writeln(Colored("# Your setup commands here", ColorGray))
+				return w.Err()
 			}
 
-			printf(cmd, "🚀 \033[1mRunning bootstrap script\033[0m\n")
-			printf(cmd, "   📄 Script: \033[36m%s\033[0m\n", scriptPath)
-			printf(cmd, "\n")
+			w.Writeln(Rocket("Running bootstrap script")).
+				WriteString("   ").
+				Write(Message{Text: "Script: ", Emoji: "📄"}).
+				Writeln(Colored(scriptPath, ColorCyan)).
+				WritelnString("")
+
+			if err := w.Err(); err != nil {
+				return err
+			}
 
 			if err := lnk.RunBootstrapScript(scriptPath); err != nil {
 				return err
 			}
 
-			printf(cmd, "\n✅ \033[1;32mBootstrap completed successfully!\033[0m\n")
-			printf(cmd, "   🎉 Your environment is ready to use\n")
-			return nil
+			w.WritelnString("").
+				Writeln(Success("Bootstrap completed successfully!")).
+				WriteString("   ").
+				Writeln(Message{Text: "Your environment is ready to use", Emoji: "🎉"})
+
+			return w.Err()
 		},
 	}
 }

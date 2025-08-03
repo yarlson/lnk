@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+
 	"github.com/yarlson/lnk/internal/core"
 )
 
@@ -18,8 +20,8 @@ func newRemoveCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			filePath := args[0]
 			host, _ := cmd.Flags().GetString("host")
-
 			lnk := core.NewLnk(core.WithHost(host))
+			w := GetWriter(cmd)
 
 			if err := lnk.Remove(filePath); err != nil {
 				return err
@@ -27,14 +29,23 @@ func newRemoveCmd() *cobra.Command {
 
 			basename := filepath.Base(filePath)
 			if host != "" {
-				printf(cmd, "🗑️  \033[1mRemoved %s from lnk (host: %s)\033[0m\n", basename, host)
-				printf(cmd, "   ↩️  \033[90m~/.config/lnk/%s.lnk/%s\033[0m → \033[36m%s\033[0m\n", host, basename, filePath)
+				w.Writeln(Message{Text: fmt.Sprintf("Removed %s from lnk (host: %s)", basename, host), Emoji: "🗑️", Bold: true}).
+					WriteString("   ").
+					Write(Message{Text: fmt.Sprintf("~/.config/lnk/%s.lnk/%s", host, basename), Emoji: "↩️"}).
+					WriteString(" → ").
+					Writeln(Colored(filePath, ColorCyan))
 			} else {
-				printf(cmd, "🗑️  \033[1mRemoved %s from lnk\033[0m\n", basename)
-				printf(cmd, "   ↩️  \033[90m~/.config/lnk/%s\033[0m → \033[36m%s\033[0m\n", basename, filePath)
+				w.Writeln(Message{Text: fmt.Sprintf("Removed %s from lnk", basename), Emoji: "🗑️", Bold: true}).
+					WriteString("   ").
+					Write(Message{Text: fmt.Sprintf("~/.config/lnk/%s", basename), Emoji: "↩️"}).
+					WriteString(" → ").
+					Writeln(Colored(filePath, ColorCyan))
 			}
-			printf(cmd, "   📄 Original file restored\n")
-			return nil
+
+			w.WriteString("   ").
+				Writeln(Message{Text: "Original file restored", Emoji: "📄"})
+
+			return w.Err()
 		},
 	}
 
