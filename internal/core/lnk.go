@@ -156,7 +156,7 @@ func (l *Lnk) InitWithRemoteForce(remoteURL string, force bool) error {
 		// Safety check: prevent data loss by checking for existing managed files
 		if l.HasUserContent() {
 			if !force {
-				return fmt.Errorf("❌ Directory \033[31m%s\033[0m already contains managed files\n   💡 Use 'lnk pull' to update from remote instead of 'lnk init -r'", l.repoPath)
+				return ErrDirectoryContainsManagedFiles(l.repoPath)
 			}
 		}
 		// Clone from remote
@@ -176,7 +176,7 @@ func (l *Lnk) InitWithRemoteForce(remoteURL string, force bool) error {
 			return nil
 		} else {
 			// It's not a lnk repository, error to prevent data loss
-			return fmt.Errorf("❌ Directory \033[31m%s\033[0m contains an existing Git repository\n   💡 Please backup or move the existing repository before initializing lnk", l.repoPath)
+			return ErrDirectoryContainsGitRepo(l.repoPath)
 		}
 	}
 
@@ -230,7 +230,7 @@ func (l *Lnk) Add(filePath string) error {
 	}
 	for _, item := range managedItems {
 		if item == relativePath {
-			return fmt.Errorf("❌ File is already managed by lnk: \033[31m%s\033[0m", relativePath)
+			return ErrFileAlreadyManaged(relativePath)
 		}
 	}
 
@@ -332,7 +332,7 @@ func (l *Lnk) AddMultiple(paths []string) error {
 		}
 		for _, item := range managedItems {
 			if item == relativePath {
-				return fmt.Errorf("❌ File is already managed by lnk: \033[31m%s\033[0m", relativePath)
+				return ErrFileAlreadyManaged(relativePath)
 			}
 		}
 
@@ -476,7 +476,7 @@ func (l *Lnk) Remove(filePath string) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("❌ File is not managed by lnk: \033[31m%s\033[0m", relativePath)
+		return ErrFileNotManaged(relativePath)
 	}
 
 	// Get the target path in the repository
@@ -551,7 +551,7 @@ type StatusInfo struct {
 func (l *Lnk) Status() (*StatusInfo, error) {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return nil, fmt.Errorf("❌ Lnk repository not initialized\n   💡 Run \033[1mlnk init\033[0m first")
+		return nil, ErrRepositoryNotInitialized()
 	}
 
 	gitStatus, err := l.git.GetStatus()
@@ -571,7 +571,7 @@ func (l *Lnk) Status() (*StatusInfo, error) {
 func (l *Lnk) Push(message string) error {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return fmt.Errorf("❌ Lnk repository not initialized\n   💡 Run \033[1mlnk init\033[0m first")
+		return ErrRepositoryNotInitialized()
 	}
 
 	// Check if there are any changes
@@ -601,7 +601,7 @@ func (l *Lnk) Push(message string) error {
 func (l *Lnk) Pull() ([]string, error) {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return nil, fmt.Errorf("❌ Lnk repository not initialized\n   💡 Run \033[1mlnk init\033[0m first")
+		return nil, ErrRepositoryNotInitialized()
 	}
 
 	// Pull changes from remote (this will be a no-op in tests since we don't have real remotes)
@@ -622,7 +622,7 @@ func (l *Lnk) Pull() ([]string, error) {
 func (l *Lnk) List() ([]string, error) {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return nil, fmt.Errorf("❌ Lnk repository not initialized\n   💡 Run \033[1mlnk init\033[0m first")
+		return nil, ErrRepositoryNotInitialized()
 	}
 
 	// Get managed items from .lnk file
@@ -822,7 +822,7 @@ func (l *Lnk) writeManagedItems(items []string) error {
 func (l *Lnk) FindBootstrapScript() (string, error) {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return "", fmt.Errorf("❌ Lnk repository not initialized\n   💡 Run \033[1mlnk init\033[0m first")
+		return "", ErrRepositoryNotInitialized()
 	}
 
 	// Look for bootstrap.sh - simple, opinionated choice
@@ -840,12 +840,12 @@ func (l *Lnk) RunBootstrapScript(scriptName string) error {
 
 	// Verify the script exists
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		return fmt.Errorf("❌ Bootstrap script not found: \033[31m%s\033[0m", scriptName)
+		return ErrBootstrapScriptNotFound(scriptName)
 	}
 
 	// Make sure it's executable
 	if err := os.Chmod(scriptPath, 0755); err != nil {
-		return fmt.Errorf("❌ Failed to make bootstrap script executable: %w", err)
+		return ErrBootstrapScriptNotExecutable(err)
 	}
 
 	// Run with bash (since we only support bootstrap.sh)
@@ -861,7 +861,7 @@ func (l *Lnk) RunBootstrapScript(scriptName string) error {
 
 	// Run the script
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("❌ Bootstrap script failed with error: %w", err)
+		return ErrBootstrapScriptFailed(err)
 	}
 
 	return nil
@@ -988,7 +988,7 @@ func (l *Lnk) addMultipleWithProgress(paths []string, progress ProgressCallback)
 		}
 		for _, item := range managedItems {
 			if item == relativePath {
-				return fmt.Errorf("❌ File is already managed by lnk: \033[31m%s\033[0m", relativePath)
+				return ErrFileAlreadyManaged(relativePath)
 			}
 		}
 

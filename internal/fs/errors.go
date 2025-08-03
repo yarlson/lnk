@@ -1,28 +1,7 @@
 package fs
 
-import "fmt"
-
-// ANSI color codes for consistent formatting
-const (
-	colorReset = "\033[0m"
-	colorRed   = "\033[31m"
-	colorBold  = "\033[1m"
-)
-
-// formatError creates a consistently formatted error message with ❌ prefix
-func formatError(message string, args ...interface{}) string {
-	return fmt.Sprintf("❌ "+message, args...)
-}
-
-// formatPath formats a file path with red color
-func formatPath(path string) string {
-	return fmt.Sprintf("%s%s%s", colorRed, path, colorReset)
-}
-
-// formatCommand formats a command with bold styling
-func formatCommand(command string) string {
-	return fmt.Sprintf("%s%s%s", colorBold, command, colorReset)
-}
+// Structured errors that separate content from presentation
+// These will be formatted by the cmd package based on user preferences
 
 // FileNotExistsError represents an error when a file does not exist
 type FileNotExistsError struct {
@@ -31,11 +10,16 @@ type FileNotExistsError struct {
 }
 
 func (e *FileNotExistsError) Error() string {
-	return formatError("File or directory not found: %s", formatPath(e.Path))
+	return "File or directory not found: " + e.Path
 }
 
 func (e *FileNotExistsError) Unwrap() error {
 	return e.Err
+}
+
+// GetPath returns the path for formatting purposes
+func (e *FileNotExistsError) GetPath() string {
+	return e.Path
 }
 
 // FileCheckError represents an error when failing to check a file
@@ -44,7 +28,7 @@ type FileCheckError struct {
 }
 
 func (e *FileCheckError) Error() string {
-	return formatError("Unable to access file. Please check file permissions and try again.")
+	return "Unable to access file. Please check file permissions and try again."
 }
 
 func (e *FileCheckError) Unwrap() error {
@@ -57,7 +41,15 @@ type UnsupportedFileTypeError struct {
 }
 
 func (e *UnsupportedFileTypeError) Error() string {
-	return formatError("Cannot manage this type of file: %s\n   💡 lnk can only manage regular files and directories", formatPath(e.Path))
+	return "Cannot manage this type of file: " + e.Path
+}
+
+func (e *UnsupportedFileTypeError) GetPath() string {
+	return e.Path
+}
+
+func (e *UnsupportedFileTypeError) GetSuggestion() string {
+	return "lnk can only manage regular files and directories"
 }
 
 func (e *UnsupportedFileTypeError) Unwrap() error {
@@ -70,8 +62,15 @@ type NotManagedByLnkError struct {
 }
 
 func (e *NotManagedByLnkError) Error() string {
-	return formatError("File is not managed by lnk: %s\n   💡 Use %s to manage this file first",
-		formatPath(e.Path), formatCommand("lnk add"))
+	return "File is not managed by lnk: " + e.Path
+}
+
+func (e *NotManagedByLnkError) GetPath() string {
+	return e.Path
+}
+
+func (e *NotManagedByLnkError) GetSuggestion() string {
+	return "Use 'lnk add' to manage this file first"
 }
 
 func (e *NotManagedByLnkError) Unwrap() error {
@@ -84,7 +83,7 @@ type SymlinkReadError struct {
 }
 
 func (e *SymlinkReadError) Error() string {
-	return formatError("Unable to read symlink. The file may be corrupted or have invalid permissions.")
+	return "Unable to read symlink. The file may be corrupted or have invalid permissions."
 }
 
 func (e *SymlinkReadError) Unwrap() error {
@@ -98,7 +97,7 @@ type DirectoryCreationError struct {
 }
 
 func (e *DirectoryCreationError) Error() string {
-	return formatError("Failed to create directory. Please check permissions and available disk space.")
+	return "Failed to create directory. Please check permissions and available disk space."
 }
 
 func (e *DirectoryCreationError) Unwrap() error {
@@ -111,9 +110,21 @@ type RelativePathCalculationError struct {
 }
 
 func (e *RelativePathCalculationError) Error() string {
-	return formatError("Unable to create symlink due to path configuration issues. Please check file locations.")
+	return "Unable to create symlink due to path configuration issues. Please check file locations."
 }
 
 func (e *RelativePathCalculationError) Unwrap() error {
 	return e.Err
+}
+
+// ErrorWithPath is an interface for errors that have an associated file path
+type ErrorWithPath interface {
+	error
+	GetPath() string
+}
+
+// ErrorWithSuggestion is an interface for errors that provide helpful suggestions
+type ErrorWithSuggestion interface {
+	error
+	GetSuggestion() string
 }

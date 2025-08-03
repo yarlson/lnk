@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+
 	"github.com/yarlson/lnk/internal/core"
 )
 
@@ -33,6 +35,7 @@ changes to your system - perfect for verification before bulk operations.`,
 			recursive, _ := cmd.Flags().GetBool("recursive")
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			lnk := core.NewLnk(core.WithHost(host))
+			w := GetWriter(cmd)
 
 			// Handle dry-run mode
 			if dryRun {
@@ -43,19 +46,22 @@ changes to your system - perfect for verification before bulk operations.`,
 
 				// Display preview output
 				if recursive {
-					printf(cmd, "🔍 \033[1mWould add %d files recursively:\033[0m\n", len(files))
+					w.Writeln(Message{Text: fmt.Sprintf("Would add %d files recursively:", len(files)), Emoji: "🔍", Bold: true})
 				} else {
-					printf(cmd, "🔍 \033[1mWould add %d files:\033[0m\n", len(files))
+					w.Writeln(Message{Text: fmt.Sprintf("Would add %d files:", len(files)), Emoji: "🔍", Bold: true})
 				}
 
 				// List files that would be added
 				for _, file := range files {
 					basename := filepath.Base(file)
-					printf(cmd, "   📄 \033[90m%s\033[0m\n", basename)
+					w.WriteString("   ").
+						Writeln(Message{Text: basename, Emoji: "📄"})
 				}
 
-				printf(cmd, "\n💡 \033[33mTo proceed:\033[0m run without --dry-run flag\n")
-				return nil
+				w.WritelnString("").
+					Writeln(Info("To proceed: run without --dry-run flag"))
+
+				return w.Err()
 			}
 
 			// Handle recursive mode
@@ -68,7 +74,7 @@ changes to your system - perfect for verification before bulk operations.`,
 
 				// Create progress callback for CLI display
 				progressCallback := func(current, total int, currentFile string) {
-					printf(cmd, "\r⏳ Processing %d/%d: %s", current, total, currentFile)
+					w.WriteString(fmt.Sprintf("\r⏳ Processing %d/%d: %s", current, total, currentFile))
 				}
 
 				if err := lnk.AddRecursiveWithProgress(args, progressCallback); err != nil {
@@ -76,7 +82,7 @@ changes to your system - perfect for verification before bulk operations.`,
 				}
 
 				// Clear progress line and show completion
-				printf(cmd, "\r")
+				w.WriteString("\r")
 
 				// Store processed file count for display
 				args = previewFiles // Replace args with actual files for display
@@ -99,9 +105,9 @@ changes to your system - perfect for verification before bulk operations.`,
 			if recursive {
 				// Recursive mode - show enhanced message with count
 				if host != "" {
-					printf(cmd, "✨ \033[1mAdded %d files recursively to lnk (host: %s)\033[0m\n", len(args), host)
+					w.Writeln(Sparkles(fmt.Sprintf("Added %d files recursively to lnk (host: %s)", len(args), host)))
 				} else {
-					printf(cmd, "✨ \033[1mAdded %d files recursively to lnk\033[0m\n", len(args))
+					w.Writeln(Sparkles(fmt.Sprintf("Added %d files recursively to lnk", len(args))))
 				}
 
 				// Show some of the files that were added (limit to first few for readability)
@@ -113,47 +119,70 @@ changes to your system - perfect for verification before bulk operations.`,
 				for i := 0; i < filesToShow; i++ {
 					basename := filepath.Base(args[i])
 					if host != "" {
-						printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s.lnk/...\033[0m\n", basename, host)
+						w.WriteString("   ").
+							Write(Link(basename)).
+							WriteString(" → ").
+							Writeln(Colored(fmt.Sprintf("~/.config/lnk/%s.lnk/...", host), ColorCyan))
 					} else {
-						printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/...\033[0m\n", basename)
+						w.WriteString("   ").
+							Write(Link(basename)).
+							WriteString(" → ").
+							Writeln(Colored("~/.config/lnk/...", ColorCyan))
 					}
 				}
 
 				if len(args) > 5 {
-					printf(cmd, "   \033[90m... and %d more files\033[0m\n", len(args)-5)
+					w.WriteString("   ").
+						Writeln(Colored(fmt.Sprintf("... and %d more files", len(args)-5), ColorGray))
 				}
 			} else if len(args) == 1 {
 				// Single file - maintain existing output format for backward compatibility
 				filePath := args[0]
 				basename := filepath.Base(filePath)
 				if host != "" {
-					printf(cmd, "✨ \033[1mAdded %s to lnk (host: %s)\033[0m\n", basename, host)
-					printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s.lnk/%s\033[0m\n", filePath, host, filePath)
+					w.Writeln(Sparkles(fmt.Sprintf("Added %s to lnk (host: %s)", basename, host)))
+					w.WriteString("   ").
+						Write(Link(filePath)).
+						WriteString(" → ").
+						Writeln(Colored(fmt.Sprintf("~/.config/lnk/%s.lnk/%s", host, filePath), ColorCyan))
 				} else {
-					printf(cmd, "✨ \033[1mAdded %s to lnk\033[0m\n", basename)
-					printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s\033[0m\n", filePath, filePath)
+					w.Writeln(Sparkles(fmt.Sprintf("Added %s to lnk", basename)))
+					w.WriteString("   ").
+						Write(Link(filePath)).
+						WriteString(" → ").
+						Writeln(Colored(fmt.Sprintf("~/.config/lnk/%s", filePath), ColorCyan))
 				}
 			} else {
 				// Multiple files - show summary
 				if host != "" {
-					printf(cmd, "✨ \033[1mAdded %d items to lnk (host: %s)\033[0m\n", len(args), host)
+					w.Writeln(Sparkles(fmt.Sprintf("Added %d items to lnk (host: %s)", len(args), host)))
 				} else {
-					printf(cmd, "✨ \033[1mAdded %d items to lnk\033[0m\n", len(args))
+					w.Writeln(Sparkles(fmt.Sprintf("Added %d items to lnk", len(args))))
 				}
 
 				// List each added file
 				for _, filePath := range args {
 					basename := filepath.Base(filePath)
 					if host != "" {
-						printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/%s.lnk/...\033[0m\n", basename, host)
+						w.WriteString("   ").
+							Write(Link(basename)).
+							WriteString(" → ").
+							Writeln(Colored(fmt.Sprintf("~/.config/lnk/%s.lnk/...", host), ColorCyan))
 					} else {
-						printf(cmd, "   🔗 \033[90m%s\033[0m → \033[36m~/.config/lnk/...\033[0m\n", basename)
+						w.WriteString("   ").
+							Write(Link(basename)).
+							WriteString(" → ").
+							Writeln(Colored("~/.config/lnk/...", ColorCyan))
 					}
 				}
 			}
 
-			printf(cmd, "   📝 Use \033[1mlnk push\033[0m to sync to remote\n")
-			return nil
+			w.WriteString("   ").
+				Write(Message{Text: "Use ", Emoji: "📝"}).
+				Write(Bold("lnk push")).
+				WritelnString(" to sync to remote")
+
+			return w.Err()
 		},
 	}
 

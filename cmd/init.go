@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+
 	"github.com/yarlson/lnk/internal/core"
 )
 
@@ -18,11 +19,17 @@ func newInitCmd() *cobra.Command {
 			force, _ := cmd.Flags().GetBool("force")
 
 			lnk := core.NewLnk()
+			w := GetWriter(cmd)
 
 			// Show warning when force is used and there are managed files to overwrite
 			if force && remote != "" && lnk.HasUserContent() {
-				printf(cmd, "⚠️  \033[33mUsing --force flag: This will overwrite existing managed files\033[0m\n")
-				printf(cmd, "   💡 Only use this if you understand the risks\n\n")
+				w.Writeln(Warning("Using --force flag: This will overwrite existing managed files")).
+					WriteString("   ").
+					Writeln(Info("Only use this if you understand the risks")).
+					WritelnString("")
+				if err := w.Err(); err != nil {
+					return err
+				}
 			}
 
 			if err := lnk.InitWithRemoteForce(remote, force); err != nil {
@@ -30,13 +37,26 @@ func newInitCmd() *cobra.Command {
 			}
 
 			if remote != "" {
-				printf(cmd, "🎯 \033[1mInitialized lnk repository\033[0m\n")
-				printf(cmd, "   📦 Cloned from: \033[36m%s\033[0m\n", remote)
-				printf(cmd, "   📁 Location: \033[90m~/.config/lnk\033[0m\n")
+				w.Writeln(Target("Initialized lnk repository")).
+					WriteString("   ").
+					Write(Message{Text: "Cloned from: ", Emoji: "📦"}).
+					Writeln(Colored(remote, ColorCyan)).
+					WriteString("   ").
+					Write(Message{Text: "Location: ", Emoji: "📁"}).
+					Writeln(Colored("~/.config/lnk", ColorGray))
+
+				if err := w.Err(); err != nil {
+					return err
+				}
 
 				// Try to run bootstrap script if not disabled
 				if !noBootstrap {
-					printf(cmd, "\n🔍 \033[1mLooking for bootstrap script...\033[0m\n")
+					w.WritelnString("").
+						Writeln(Message{Text: "Looking for bootstrap script...", Emoji: "🔍", Bold: true})
+
+					if err := w.Err(); err != nil {
+						return err
+					}
 
 					scriptPath, err := lnk.FindBootstrapScript()
 					if err != nil {
@@ -44,34 +64,68 @@ func newInitCmd() *cobra.Command {
 					}
 
 					if scriptPath != "" {
-						printf(cmd, "   ✅ Found bootstrap script: \033[36m%s\033[0m\n", scriptPath)
-						printf(cmd, "\n🚀 \033[1mRunning bootstrap script...\033[0m\n")
-						printf(cmd, "\n")
+						w.WriteString("   ").
+							Write(Success("Found bootstrap script: ")).
+							Writeln(Colored(scriptPath, ColorCyan)).
+							WritelnString("").
+							Writeln(Rocket("Running bootstrap script...")).
+							WritelnString("")
+
+						if err := w.Err(); err != nil {
+							return err
+						}
 
 						if err := lnk.RunBootstrapScript(scriptPath); err != nil {
-							printf(cmd, "\n⚠️  \033[33mBootstrap script failed, but repository was initialized successfully\033[0m\n")
-							printf(cmd, "   💡 You can run it manually with: \033[1mlnk bootstrap\033[0m\n")
-							printf(cmd, "   🔧 Error: %v\n", err)
+							w.WritelnString("").
+								Writeln(Warning("Bootstrap script failed, but repository was initialized successfully")).
+								WriteString("   ").
+								Write(Info("You can run it manually with: ")).
+								Writeln(Bold("lnk bootstrap")).
+								WriteString("   ").
+								Write(Message{Text: "Error: ", Emoji: "🔧"}).
+								Writeln(Plain(err.Error()))
 						} else {
-							printf(cmd, "\n✅ \033[1;32mBootstrap completed successfully!\033[0m\n")
+							w.WritelnString("").
+								Writeln(Success("Bootstrap completed successfully!"))
+						}
+
+						if err := w.Err(); err != nil {
+							return err
 						}
 					} else {
-						printf(cmd, "   💡 No bootstrap script found\n")
+						w.WriteString("   ").
+							Writeln(Info("No bootstrap script found"))
+						if err := w.Err(); err != nil {
+							return err
+						}
 					}
 				}
 
-				printf(cmd, "\n💡 \033[33mNext steps:\033[0m\n")
-				printf(cmd, "   • Run \033[1mlnk pull\033[0m to restore symlinks\n")
-				printf(cmd, "   • Use \033[1mlnk add <file>\033[0m to manage new files\n")
-			} else {
-				printf(cmd, "🎯 \033[1mInitialized empty lnk repository\033[0m\n")
-				printf(cmd, "   📁 Location: \033[90m~/.config/lnk\033[0m\n")
-				printf(cmd, "\n💡 \033[33mNext steps:\033[0m\n")
-				printf(cmd, "   • Run \033[1mlnk add <file>\033[0m to start managing dotfiles\n")
-				printf(cmd, "   • Add a remote with: \033[1mgit remote add origin <url>\033[0m\n")
-			}
+				w.WritelnString("").
+					Writeln(Info("Next steps:")).
+					WriteString("   • Run ").
+					Write(Bold("lnk pull")).
+					Writeln(Plain(" to restore symlinks")).
+					WriteString("   • Use ").
+					Write(Bold("lnk add <file>")).
+					Writeln(Plain(" to manage new files"))
 
-			return nil
+				return w.Err()
+			} else {
+				w.Writeln(Target("Initialized empty lnk repository")).
+					WriteString("   ").
+					Write(Message{Text: "Location: ", Emoji: "📁"}).
+					Writeln(Colored("~/.config/lnk", ColorGray)).
+					WritelnString("").
+					Writeln(Info("Next steps:")).
+					WriteString("   • Run ").
+					Write(Bold("lnk add <file>")).
+					Writeln(Plain(" to start managing dotfiles")).
+					WriteString("   • Add a remote with: ").
+					Writeln(Bold("git remote add origin <url>"))
+
+				return w.Err()
+			}
 		},
 	}
 

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+
 	"github.com/yarlson/lnk/internal/core"
 )
 
@@ -20,15 +21,22 @@ func newPushCmd() *cobra.Command {
 			}
 
 			lnk := core.NewLnk()
+			w := GetWriter(cmd)
+
 			if err := lnk.Push(message); err != nil {
 				return err
 			}
 
-			printf(cmd, "🚀 \033[1;32mSuccessfully pushed changes\033[0m\n")
-			printf(cmd, "   💾 Commit: \033[90m%s\033[0m\n", message)
-			printf(cmd, "   📡 Synced to remote\n")
-			printf(cmd, "   ✨ Your dotfiles are up to date!\n")
-			return nil
+			w.Writeln(Rocket("Successfully pushed changes")).
+				WriteString("   ").
+				Write(Message{Text: "Commit: ", Emoji: "💾"}).
+				Writeln(Colored(message, ColorGray)).
+				WriteString("   ").
+				Writeln(Message{Text: "Synced to remote", Emoji: "📡"}).
+				WriteString("   ").
+				Writeln(Sparkles("Your dotfiles are up to date!"))
+
+			return w.Err()
 		},
 	}
 }

@@ -325,6 +325,72 @@ lnk pull                                   # Get updates (work config won't affe
 - `--no-bootstrap` - Skip automatic execution of bootstrap script after cloning
 - `--force` - Force initialization even if directory contains managed files (WARNING: overwrites existing content)
 
+### Output Formatting
+
+Lnk provides flexible output formatting options to suit different environments and preferences:
+
+#### Color Output
+
+Control when ANSI colors are used in output:
+
+```bash
+# Default: auto-detect based on TTY
+lnk init
+
+# Force colors regardless of environment
+lnk init --colors=always
+
+# Disable colors completely
+lnk init --colors=never
+
+# Environment variable support
+NO_COLOR=1 lnk init  # Disables colors (acts like --colors=never)
+```
+
+**Color modes:**
+- `auto` (default): Use colors only when stdout is a TTY
+- `always`: Force color output regardless of TTY
+- `never`: Disable color output regardless of TTY
+
+The `NO_COLOR` environment variable acts like `--colors=never` when set, but explicit `--colors` flags take precedence.
+
+#### Emoji Output
+
+Control emoji usage in output messages:
+
+```bash
+# Default: emojis enabled
+lnk init
+
+# Disable emojis
+lnk init --no-emoji
+
+# Explicitly enable emojis
+lnk init --emoji
+```
+
+**Emoji flags:**
+- `--emoji` (default: true): Enable emoji in output
+- `--no-emoji`: Disable emoji in output
+
+The `--emoji` and `--no-emoji` flags are mutually exclusive.
+
+#### Examples
+
+```bash
+# Clean output for scripts/pipes
+lnk init --colors=never --no-emoji
+
+# Force colorful output in non-TTY environments
+lnk init --colors=always
+
+# Disable colors but keep emojis
+lnk init --colors=never
+
+# Disable emojis but keep colors
+lnk init --no-emoji
+```
+
 ### Add Command Examples
 
 ```bash

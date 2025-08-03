@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
+
 	"github.com/yarlson/lnk/internal/core"
 )
 
@@ -42,61 +44,88 @@ func newListCmd() *cobra.Command {
 
 func listCommonConfig(cmd *cobra.Command) error {
 	lnk := core.NewLnk()
+	w := GetWriter(cmd)
+
 	managedItems, err := lnk.List()
 	if err != nil {
 		return err
 	}
 
 	if len(managedItems) == 0 {
-		printf(cmd, "📋 \033[1mNo files currently managed by lnk (common)\033[0m\n")
-		printf(cmd, "   💡 Use \033[1mlnk add <file>\033[0m to start managing files\n")
-		return nil
+		w.Writeln(Message{Text: "No files currently managed by lnk (common)", Emoji: "📋", Bold: true}).
+			WriteString("   ").
+			Write(Info("Use ")).
+			Write(Bold("lnk add <file>")).
+			WritelnString(" to start managing files")
+		return w.Err()
 	}
 
-	printf(cmd, "📋 \033[1mFiles managed by lnk (common)\033[0m (\033[36m%d item", len(managedItems))
+	countText := fmt.Sprintf("Files managed by lnk (common) (%d item", len(managedItems))
 	if len(managedItems) > 1 {
-		printf(cmd, "s")
+		countText += "s"
 	}
-	printf(cmd, "\033[0m):\n\n")
+	countText += "):"
+
+	w.Writeln(Message{Text: countText, Emoji: "📋", Bold: true}).
+		WritelnString("")
 
 	for _, item := range managedItems {
-		printf(cmd, "   🔗 \033[36m%s\033[0m\n", item)
+		w.WriteString("   ").
+			Writeln(Link(item))
 	}
 
-	printf(cmd, "\n💡 Use \033[1mlnk status\033[0m to check sync status\n")
-	return nil
+	w.WritelnString("").
+		Write(Info("Use ")).
+		Write(Bold("lnk status")).
+		WritelnString(" to check sync status")
+	return w.Err()
 }
 
 func listHostConfig(cmd *cobra.Command, host string) error {
 	lnk := core.NewLnk(core.WithHost(host))
+	w := GetWriter(cmd)
+
 	managedItems, err := lnk.List()
 	if err != nil {
 		return err
 	}
 
 	if len(managedItems) == 0 {
-		printf(cmd, "📋 \033[1mNo files currently managed by lnk (host: %s)\033[0m\n", host)
-		printf(cmd, "   💡 Use \033[1mlnk add --host %s <file>\033[0m to start managing files\n", host)
-		return nil
+		w.Writeln(Message{Text: fmt.Sprintf("No files currently managed by lnk (host: %s)", host), Emoji: "📋", Bold: true}).
+			WriteString("   ").
+			Write(Info("Use ")).
+			Write(Bold(fmt.Sprintf("lnk add --host %s <file>", host))).
+			WritelnString(" to start managing files")
+		return w.Err()
 	}
 
-	printf(cmd, "📋 \033[1mFiles managed by lnk (host: %s)\033[0m (\033[36m%d item", host, len(managedItems))
+	countText := fmt.Sprintf("Files managed by lnk (host: %s) (%d item", host, len(managedItems))
 	if len(managedItems) > 1 {
-		printf(cmd, "s")
+		countText += "s"
 	}
-	printf(cmd, "\033[0m):\n\n")
+	countText += "):"
+
+	w.Writeln(Message{Text: countText, Emoji: "📋", Bold: true}).
+		WritelnString("")
 
 	for _, item := range managedItems {
-		printf(cmd, "   🔗 \033[36m%s\033[0m\n", item)
+		w.WriteString("   ").
+			Writeln(Link(item))
 	}
 
-	printf(cmd, "\n💡 Use \033[1mlnk status\033[0m to check sync status\n")
-	return nil
+	w.WritelnString("").
+		Write(Info("Use ")).
+		Write(Bold("lnk status")).
+		WritelnString(" to check sync status")
+	return w.Err()
 }
 
 func listAllConfigs(cmd *cobra.Command) error {
+	w := GetWriter(cmd)
+
 	// List common configuration
-	printf(cmd, "📋 \033[1mAll configurations managed by lnk\033[0m\n\n")
+	w.Writeln(Message{Text: "All configurations managed by lnk", Emoji: "📋", Bold: true}).
+		WritelnString("")
 
 	lnk := core.NewLnk()
 	commonItems, err := lnk.List()
@@ -104,17 +133,21 @@ func listAllConfigs(cmd *cobra.Command) error {
 		return err
 	}
 
-	printf(cmd, "🌐 \033[1mCommon configuration\033[0m (\033[36m%d item", len(commonItems))
+	countText := fmt.Sprintf("Common configuration (%d item", len(commonItems))
 	if len(commonItems) > 1 {
-		printf(cmd, "s")
+		countText += "s"
 	}
-	printf(cmd, "\033[0m):\n")
+	countText += "):"
+
+	w.Writeln(Message{Text: countText, Emoji: "🌐", Bold: true})
 
 	if len(commonItems) == 0 {
-		printf(cmd, "   \033[90m(no files)\033[0m\n")
+		w.WriteString("   ").
+			Writeln(Colored("(no files)", ColorGray))
 	} else {
 		for _, item := range commonItems {
-			printf(cmd, "   🔗 \033[36m%s\033[0m\n", item)
+			w.WriteString("   ").
+				Writeln(Link(item))
 		}
 	}
 
@@ -125,32 +158,42 @@ func listAllConfigs(cmd *cobra.Command) error {
 	}
 
 	for _, host := range hosts {
-		printf(cmd, "\n🖥️  \033[1mHost: %s\033[0m", host)
+		w.WritelnString("").
+			Write(Message{Text: fmt.Sprintf("Host: %s", host), Emoji: "🖥️", Bold: true})
 
 		hostLnk := core.NewLnk(core.WithHost(host))
 		hostItems, err := hostLnk.List()
 		if err != nil {
-			printf(cmd, " \033[31m(error: %v)\033[0m\n", err)
+			w.WriteString(" ").
+				Writeln(Colored(fmt.Sprintf("(error: %v)", err), ColorRed))
 			continue
 		}
 
-		printf(cmd, " (\033[36m%d item", len(hostItems))
+		countText := fmt.Sprintf(" (%d item", len(hostItems))
 		if len(hostItems) > 1 {
-			printf(cmd, "s")
+			countText += "s"
 		}
-		printf(cmd, "\033[0m):\n")
+		countText += "):"
+
+		w.WriteString(countText).
+			WritelnString("")
 
 		if len(hostItems) == 0 {
-			printf(cmd, "   \033[90m(no files)\033[0m\n")
+			w.WriteString("   ").
+				Writeln(Colored("(no files)", ColorGray))
 		} else {
 			for _, item := range hostItems {
-				printf(cmd, "   🔗 \033[36m%s\033[0m\n", item)
+				w.WriteString("   ").
+					Writeln(Link(item))
 			}
 		}
 	}
 
-	printf(cmd, "\n💡 Use \033[1mlnk list --host <hostname>\033[0m to see specific host configuration\n")
-	return nil
+	w.WritelnString("").
+		Write(Info("Use ")).
+		Write(Bold("lnk list --host <hostname>")).
+		WritelnString(" to see specific host configuration")
+	return w.Err()
 }
 
 func findHostConfigs() ([]string, error) {
