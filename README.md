@@ -348,6 +348,7 @@ NO_COLOR=1 lnk init  # Disables colors (acts like --colors=never)
 ```
 
 **Color modes:**
+
 - `auto` (default): Use colors only when stdout is a TTY
 - `always`: Force color output regardless of TTY
 - `never`: Disable color output regardless of TTY
@@ -370,6 +371,7 @@ lnk init --emoji
 ```
 
 **Emoji flags:**
+
 - `--emoji` (default: true): Enable emoji in output
 - `--no-emoji`: Disable emoji in output
 
