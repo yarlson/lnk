@@ -1682,6 +1682,106 @@ func (suite *CoreTestSuite) TestGetRelativePath() {
 	}
 }
 
+// TestIsValidSymlink tests symlink validation logic
+func (suite *CoreTestSuite) TestIsValidSymlink() {
+	// Setup test directory structure
+	repoDir := filepath.Join(suite.tempDir, "lnk")
+	err := os.MkdirAll(repoDir, 0755)
+	suite.Require().NoError(err)
+
+	// Create a valid target file in repo
+	validTarget := filepath.Join(repoDir, "target.txt")
+	err = os.WriteFile(validTarget, []byte("content"), 0644)
+	suite.Require().NoError(err)
+
+	// Create a valid symlink pointing to target
+	validSymlink := filepath.Join(suite.tempDir, "valid-link")
+	err = os.Symlink(validTarget, validSymlink)
+	suite.Require().NoError(err)
+
+	// Create a broken symlink
+	brokenSymlink := filepath.Join(suite.tempDir, "broken-link")
+	err = os.Symlink(filepath.Join(repoDir, "nonexistent"), brokenSymlink)
+	suite.Require().NoError(err)
+
+	// Create symlink pointing to different target
+	wrongTarget := filepath.Join(suite.tempDir, "wrong.txt")
+	err = os.WriteFile(wrongTarget, []byte("content"), 0644)
+	suite.Require().NoError(err)
+	wrongSymlink := filepath.Join(suite.tempDir, "wrong-link")
+	err = os.Symlink(wrongTarget, wrongSymlink)
+	suite.Require().NoError(err)
+
+	// Create regular file (not a symlink)
+	regularFile := filepath.Join(suite.tempDir, "regular.txt")
+	err = os.WriteFile(regularFile, []byte("content"), 0644)
+	suite.Require().NoError(err)
+
+	tests := []struct {
+		name           string
+		symlink        string
+		expectedTarget string
+		want           bool
+		setup          func()
+	}{
+		{
+			name:           "valid symlink pointing to correct target",
+			symlink:        validSymlink,
+			expectedTarget: validTarget,
+			want:           true,
+			setup:          nil,
+		},
+		{
+			name:           "broken symlink pointing to expected target",
+			symlink:        brokenSymlink,
+			expectedTarget: filepath.Join(repoDir, "nonexistent"),
+			want:           true, // Function validates path matching, not target existence
+		},
+		{
+			name:           "symlink pointing to wrong target",
+			symlink:        wrongSymlink,
+			expectedTarget: validTarget,
+			want:           false,
+		},
+		{
+			name:           "not a symlink (regular file)",
+			symlink:        regularFile,
+			expectedTarget: validTarget,
+			want:           false,
+		},
+		{
+			name:           "nonexistent symlink path",
+			symlink:        filepath.Join(suite.tempDir, "nonexistent"),
+			expectedTarget: validTarget,
+			want:           false,
+		},
+		{
+			name:           "relative symlink to target",
+			symlink:        filepath.Join(suite.tempDir, "rel-link"),
+			expectedTarget: validTarget,
+			want:           true,
+			setup: func() {
+				relLink := filepath.Join(suite.tempDir, "rel-link")
+				relTarget, _ := filepath.Rel(suite.tempDir, validTarget)
+				_ = os.Symlink(relTarget, relLink)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			if tt.setup != nil {
+				tt.setup()
+			}
+
+			// Call isValidSymlink with expected target
+			got := suite.lnk.isValidSymlink(tt.symlink, tt.expectedTarget)
+
+			suite.Equal(tt.want, got, "Validation mismatch for test case: %s", tt.name)
+		})
+	}
+}
+
 func TestCoreSuite(t *testing.T) {
 	suite.Run(t, new(CoreTestSuite))
 }
