@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -197,7 +196,7 @@ func listAllConfigs(cmd *cobra.Command) error {
 }
 
 func findHostConfigs() ([]string, error) {
-	repoPath := getRepoPath()
+	repoPath := core.GetRepoPath()
 
 	// Check if repo exists
 	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
@@ -220,17 +219,4 @@ func findHostConfigs() ([]string, error) {
 	}
 
 	return hosts, nil
-}
-
-func getRepoPath() string {
-	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
-	if xdgConfig == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			xdgConfig = "."
-		} else {
-			xdgConfig = filepath.Join(homeDir, ".config")
-		}
-	}
-	return filepath.Join(xdgConfig, "lnk")
 }
