@@ -28,7 +28,10 @@ func (fs *FileSystem) ValidateFileForAdd(filePath string) error {
 
 	// Allow both regular files and directories
 	if !info.Mode().IsRegular() && !info.IsDir() {
-		return &UnsupportedFileTypeError{Path: filePath}
+		return &UnsupportedFileTypeError{
+			Path:       filePath,
+			Suggestion: "lnk can only manage regular files and directories",
+		}
 	}
 
 	return nil
@@ -47,7 +50,10 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 	}
 
 	if info.Mode()&os.ModeSymlink == 0 {
-		return &NotManagedByLnkError{Path: filePath}
+		return &NotManagedByLnkError{
+			Path:       filePath,
+			Suggestion: "Use 'lnk add' to manage this file first",
+		}
 	}
 
 	// Get symlink target and resolve to absolute path
@@ -65,7 +71,10 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 	repoPath = filepath.Clean(repoPath)
 
 	if !strings.HasPrefix(target, repoPath+string(filepath.Separator)) && target != repoPath {
-		return &NotManagedByLnkError{Path: filePath}
+		return &NotManagedByLnkError{
+			Path:       filePath,
+			Suggestion: "Use 'lnk add' to manage this file first",
+		}
 	}
 
 	return nil
@@ -83,7 +92,7 @@ func (fs *FileSystem) Move(src, dst string, info os.FileInfo) error {
 func (fs *FileSystem) MoveFile(src, dst string) error {
 	// Ensure destination directory exists
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return &DirectoryCreationError{Operation: "destination directory", Err: err}
+		return &DirectoryCreationError{Path: filepath.Dir(dst), Err: err}
 	}
 
 	// Move the file
@@ -106,7 +115,7 @@ func (fs *FileSystem) CreateSymlink(target, linkPath string) error {
 func (fs *FileSystem) MoveDirectory(src, dst string) error {
 	// Ensure destination parent directory exists
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return &DirectoryCreationError{Operation: "destination parent directory", Err: err}
+		return &DirectoryCreationError{Path: filepath.Dir(dst), Err: err}
 	}
 
 	// Move the directory
