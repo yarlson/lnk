@@ -2393,30 +2393,15 @@ func (suite *CoreTestSuite) TestRestoreSymlinks() {
 }
 
 // TestInitWithRemoteForce tests force initialization
+// Note: Tests involving actual remote cloning are skipped as they require network access
 func (suite *CoreTestSuite) TestInitWithRemoteForce() {
 	tests := []struct {
-		name        string
-		setupFunc   func() error
-		remoteURL   string
-		force       bool
-		wantErr     bool
-		errContains string
+		name      string
+		setupFunc func() error
+		remoteURL string
+		force     bool
+		wantErr   bool
 	}{
-		{
-			name: "force init with existing content",
-			setupFunc: func() error {
-				err := suite.lnk.Init()
-				if err != nil {
-					return err
-				}
-				// Create content
-				lnkFile := filepath.Join(suite.tempDir, "lnk", ".lnk")
-				return os.WriteFile(lnkFile, []byte(".bashrc\n"), 0644)
-			},
-			remoteURL: "https://github.com/test/dotfiles.git",
-			force:     true,
-			wantErr:   true, // Will error because clone will fail
-		},
 		{
 			name: "init without remote URL",
 			setupFunc: func() error {
@@ -2424,6 +2409,15 @@ func (suite *CoreTestSuite) TestInitWithRemoteForce() {
 			},
 			remoteURL: "",
 			force:     false,
+			wantErr:   false,
+		},
+		{
+			name: "init with force flag but no remote",
+			setupFunc: func() error {
+				return suite.lnk.Init()
+			},
+			remoteURL: "",
+			force:     true,
 			wantErr:   false,
 		},
 	}
