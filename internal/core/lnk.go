@@ -536,6 +536,77 @@ func (l *Lnk) Remove(filePath string) error {
 	return nil
 }
 
+// RemoveForce removes a file from lnk tracking even if the symlink no longer exists.
+// This is useful when a user accidentally deletes a managed file without using lnk rm.
+func (l *Lnk) RemoveForce(filePath string) error {
+	// Get relative path for tracking
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	relativePath, err := getRelativePath(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to get relative path: %w", err)
+	}
+
+	// Check if this relative path is managed
+	managedItems, err := l.getManagedItems()
+	if err != nil {
+		return fmt.Errorf("failed to get managed items: %w", err)
+	}
+
+	found := false
+	for _, item := range managedItems {
+		if item == relativePath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ErrFileNotManaged(relativePath)
+	}
+
+	// Remove symlink if it exists (ignore errors - it may already be gone)
+	_ = os.Remove(absPath)
+
+	// Remove from .lnk tracking file
+	if err := l.removeManagedItem(relativePath); err != nil {
+		return fmt.Errorf("failed to update tracking file: %w", err)
+	}
+
+	// Generate the correct git path for removal
+	gitPath := relativePath
+	if l.host != "" {
+		gitPath = filepath.Join(l.host+".lnk", relativePath)
+	}
+
+	// Remove from git (ignore errors - file may not be in git index)
+	_ = l.git.Remove(gitPath)
+
+	// Add .lnk file to the commit
+	if err := l.git.Add(l.getLnkFileName()); err != nil {
+		return err
+	}
+
+	// Commit the change
+	basename := filepath.Base(relativePath)
+	if err := l.git.Commit(fmt.Sprintf("lnk: force removed %s", basename)); err != nil {
+		return err
+	}
+
+	// Try to delete the repository copy if it exists
+	repoPath := filepath.Join(l.repoPath, gitPath)
+	if _, err := os.Stat(repoPath); err == nil {
+		// File exists in repo, remove it
+		if err := os.RemoveAll(repoPath); err != nil {
+			return fmt.Errorf("failed to remove repository copy: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // GetCommits returns the list of commits for testing purposes
 func (l *Lnk) GetCommits() ([]string, error) {
 	return l.git.GetCommits()

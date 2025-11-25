@@ -133,6 +133,23 @@ lnk init -r git@github.com:user/dotfiles.git --force
 - **Clear guidance**: Error messages suggest the correct command to use
 - **Force override**: Advanced users can bypass safety checks when needed
 
+### Recovering from Accidental Deletion
+
+If you accidentally delete a managed file without using `lnk rm`:
+
+```bash
+# File was deleted outside of lnk
+rm ~/.bashrc  # Oops! Should have used 'lnk rm'
+
+# lnk rm won't work because symlink is gone
+lnk rm ~/.bashrc
+# ❌ File or directory not found: ~/.bashrc
+
+# Use --force to clean up the orphaned tracking entry
+lnk rm --force ~/.bashrc
+# ✅ Force removed .bashrc from lnk
+```
+
 ## Bootstrap Support
 
 Lnk automatically runs bootstrap scripts when cloning dotfiles repositories, making it easy to set up your development environment. Just add a `bootstrap.sh` file to your dotfiles repo.
@@ -308,7 +325,7 @@ lnk pull                                   # Get updates (work config won't affe
 
 - `lnk init [-r remote] [--no-bootstrap] [--force]` - Create repo (runs bootstrap automatically)
 - `lnk add [--host HOST] [--recursive] [--dry-run] <files>...` - Move files to repo, create symlinks
-- `lnk rm [--host HOST] <files>` - Move files back, remove symlinks
+- `lnk rm [--host HOST] [--force] <files>` - Move files back, remove symlinks
 - `lnk list [--host HOST] [--all]` - List files managed by lnk
 - `lnk status` - Git status + sync info
 - `lnk push [msg]` - Stage all, commit, push
@@ -324,6 +341,7 @@ lnk pull                                   # Get updates (work config won't affe
 - `-r, --remote URL` - Clone from remote URL when initializing
 - `--no-bootstrap` - Skip automatic execution of bootstrap script after cloning
 - `--force` - Force initialization even if directory contains managed files (WARNING: overwrites existing content)
+- `--force, -f` (rm) - Remove from tracking even if symlink is missing (useful if you accidentally deleted a managed file)
 
 ### Output Formatting
 

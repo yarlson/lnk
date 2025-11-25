@@ -2317,6 +2317,113 @@ func (suite *CoreTestSuite) TestRemove() {
 	}
 }
 
+// TestRemoveForce tests force removal when symlink is missing
+func (suite *CoreTestSuite) TestRemoveForce() {
+	tests := []struct {
+		name        string
+		setupFunc   func() (string, error)
+		wantErr     bool
+		errContains string
+		verifyFunc  func(filePath string)
+	}{
+		{
+			name: "force remove when symlink is missing",
+			setupFunc: func() (string, error) {
+				// Initialize and add a file
+				if err := suite.lnk.Init(); err != nil {
+					return "", err
+				}
+
+				filePath := filepath.Join(suite.tempDir, ".bashrc")
+				if err := os.WriteFile(filePath, []byte("export PATH"), 0644); err != nil {
+					return "", err
+				}
+
+				if err := suite.lnk.Add(filePath); err != nil {
+					return "", err
+				}
+
+				// Now delete the symlink directly (simulating user mistake)
+				if err := os.Remove(filePath); err != nil {
+					return "", err
+				}
+
+				return filePath, nil
+			},
+			wantErr: false,
+			verifyFunc: func(filePath string) {
+				// Verify file is no longer in tracking
+				items, err := suite.lnk.getManagedItems()
+				suite.NoError(err)
+				suite.NotContains(items, ".bashrc")
+			},
+		},
+		{
+			name: "force remove when symlink still exists",
+			setupFunc: func() (string, error) {
+				// Initialize and add a file
+				if err := suite.lnk.Init(); err != nil {
+					return "", err
+				}
+
+				filePath := filepath.Join(suite.tempDir, ".vimrc")
+				if err := os.WriteFile(filePath, []byte("set number"), 0644); err != nil {
+					return "", err
+				}
+
+				if err := suite.lnk.Add(filePath); err != nil {
+					return "", err
+				}
+
+				return filePath, nil
+			},
+			wantErr: false,
+			verifyFunc: func(filePath string) {
+				// Verify file is no longer in tracking
+				items, err := suite.lnk.getManagedItems()
+				suite.NoError(err)
+				suite.NotContains(items, ".vimrc")
+
+				// Symlink should be removed
+				_, err = os.Lstat(filePath)
+				suite.True(os.IsNotExist(err))
+			},
+		},
+		{
+			name: "force remove untracked file fails",
+			setupFunc: func() (string, error) {
+				if err := suite.lnk.Init(); err != nil {
+					return "", err
+				}
+				return filepath.Join(suite.tempDir, ".untracked"), nil
+			},
+			wantErr:     true,
+			errContains: "not managed",
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			filePath, err := tt.setupFunc()
+			suite.Require().NoError(err, "Setup failed for: %s", tt.name)
+
+			err = suite.lnk.RemoveForce(filePath)
+
+			if tt.wantErr {
+				suite.Error(err, "Expected error for test: %s", tt.name)
+				if tt.errContains != "" {
+					suite.Contains(err.Error(), tt.errContains)
+				}
+			} else {
+				suite.NoError(err, "Unexpected error for test: %s", tt.name)
+				if tt.verifyFunc != nil {
+					tt.verifyFunc(filePath)
+				}
+			}
+		})
+	}
+}
+
 // TestRestoreSymlinks tests symlink restoration
 func (suite *CoreTestSuite) TestRestoreSymlinks() {
 	tests := []struct {
