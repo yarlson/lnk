@@ -49,7 +49,7 @@ archives:
       owner: root
 
 checksum:
-  name_template: 'checksums.txt'
+  name_template: "checksums.txt"
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
@@ -59,17 +59,17 @@ changelog:
   use: github
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^ci:'
-      - '^chore:'
-      - '^style:'
-      - '^refactor:'
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "^style:"
+      - "^refactor:"
   groups:
     - title: Features
       regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
       order: 0
-    - title: 'Bug fixes'
+    - title: "Bug fixes"
       regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
       order: 1
     - title: Others
@@ -85,25 +85,25 @@ release:
   mode: replace
   header: |
     ## Lnk {{.Tag}}
-    
+
     Git-native dotfiles management that doesn't suck.
-    
+
     ### Installation
-    
+
     ```bash
     # Quick install
     curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash
-    
+
     # Homebrew
     brew tap yarlson/lnk
     brew install lnk
-    
+
     # Manual download
     # Download the appropriate archive for your platform from the assets below
     # Extract and move to your PATH:
     # tar -xzf lnk_*.tar.gz && sudo mv lnk /usr/local/bin/
     ```
-    
+
   footer: |
     ---
     **Full Changelog**: https://github.com/yarlson/lnk/compare/{{.PreviousTag}}...{{.Tag}}
@@ -139,4 +139,4 @@ brews:
 #       - "--label=org.opencontainers.image.created={{.Date}}"
 #       - "--label=org.opencontainers.image.title={{.ProjectName}}"
 #       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-#       - "--label=org.opencontainers.image.version={{.Version}}" 
+#       - "--label=org.opencontainers.image.version={{.Version}}"
