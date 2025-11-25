@@ -1782,6 +1782,455 @@ func (suite *CoreTestSuite) TestIsValidSymlink() {
 	}
 }
 
+// TestAdd tests Add() function with various error paths
+func (suite *CoreTestSuite) TestAdd() {
+	tests := []struct {
+		name        string
+		setupFunc   func() (string, error)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful add of regular file",
+			setupFunc: func() (string, error) {
+				err := suite.lnk.Init()
+				if err != nil {
+					return "", err
+				}
+				testFile := filepath.Join(suite.tempDir, ".testrc")
+				err = os.WriteFile(testFile, []byte("test content"), 0644)
+				return testFile, err
+			},
+			wantErr: false,
+		},
+		{
+			name: "add nonexistent file",
+			setupFunc: func() (string, error) {
+				err := suite.lnk.Init()
+				if err != nil {
+					return "", err
+				}
+				return filepath.Join(suite.tempDir, "nonexistent"), nil
+			},
+			wantErr:     true,
+			errContains: "File or directory not found",
+		},
+		{
+			name: "add file already managed",
+			setupFunc: func() (string, error) {
+				err := suite.lnk.Init()
+				if err != nil {
+					return "", err
+				}
+				testFile := filepath.Join(suite.tempDir, ".bashrc")
+				err = os.WriteFile(testFile, []byte("content"), 0644)
+				if err != nil {
+					return "", err
+				}
+				// Add it once
+				err = suite.lnk.Add(testFile)
+				return testFile, err
+			},
+			wantErr:     true,
+			errContains: "already managed",
+		},
+		{
+			name: "add directory successfully",
+			setupFunc: func() (string, error) {
+				err := suite.lnk.Init()
+				if err != nil {
+					return "", err
+				}
+				testDir := filepath.Join(suite.tempDir, ".config", "myapp")
+				err = os.MkdirAll(testDir, 0755)
+				if err != nil {
+					return "", err
+				}
+				// Create a file inside to make it non-empty
+				testFile := filepath.Join(testDir, "config.txt")
+				err = os.WriteFile(testFile, []byte("config"), 0644)
+				return testDir, err
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			filePath, err := tt.setupFunc()
+			suite.Require().NoError(err, "Setup failed for test: %s", tt.name)
+
+			// Execute Add (only if setup succeeded and file wasn't already added)
+			if !tt.wantErr || tt.errContains != "already managed" {
+				err = suite.lnk.Add(filePath)
+			} else {
+				// For "already managed" test, try to add again
+				err = suite.lnk.Add(filePath)
+			}
+
+			// Verify
+			if tt.wantErr {
+				suite.Error(err, "Expected error for test: %s", tt.name)
+				if tt.errContains != "" {
+					suite.Contains(err.Error(), tt.errContains, "Error message mismatch for: %s", tt.name)
+				}
+			} else {
+				suite.NoError(err, "Unexpected error for test: %s", tt.name)
+
+				// Verify file is now a symlink
+				info, err := os.Lstat(filePath)
+				suite.NoError(err)
+				suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink, "File should be a symlink")
+			}
+		})
+	}
+}
+
+// TestPush tests push operation error paths
+func (suite *CoreTestSuite) TestPush() {
+	tests := []struct {
+		name        string
+		setupFunc   func() error
+		message     string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "push without remote configured",
+			setupFunc: func() error {
+				// Initialize without remote
+				return suite.lnk.Init()
+			},
+			message:     "test commit",
+			wantErr:     true,
+			errContains: "No remote repository",
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			// Setup
+			if tt.setupFunc != nil {
+				err := tt.setupFunc()
+				suite.Require().NoError(err, "Setup failed for test: %s", tt.name)
+			}
+
+			// Execute Push
+			err := suite.lnk.Push(tt.message)
+
+			// Verify
+			if tt.wantErr {
+				suite.Error(err, "Expected error for test: %s", tt.name)
+				if tt.errContains != "" {
+					suite.Contains(err.Error(), tt.errContains, "Error message mismatch for: %s", tt.name)
+				}
+			} else {
+				suite.NoError(err, "Unexpected error for test: %s", tt.name)
+			}
+		})
+	}
+}
+
+// TestPull tests pull operation error paths
+func (suite *CoreTestSuite) TestPull() {
+	tests := []struct {
+		name        string
+		setupFunc   func() error
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "pull without remote configured",
+			setupFunc: func() error {
+				return suite.lnk.Init()
+			},
+			wantErr:     true,
+			errContains: "No remote repository",
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			// Setup
+			if tt.setupFunc != nil {
+				err := tt.setupFunc()
+				suite.Require().NoError(err, "Setup failed for test: %s", tt.name)
+			}
+
+			// Execute Pull
+			_, err := suite.lnk.Pull()
+
+			// Verify
+			if tt.wantErr {
+				suite.Error(err, "Expected error for test: %s", tt.name)
+				if tt.errContains != "" {
+					suite.Contains(err.Error(), tt.errContains, "Error message mismatch for: %s", tt.name)
+				}
+			} else {
+				suite.NoError(err, "Unexpected error for test: %s", tt.name)
+			}
+		})
+	}
+}
+
+// TestAddRecursive tests recursive add operation
+func (suite *CoreTestSuite) TestAddRecursive() {
+	tests := []struct {
+		name        string
+		setupFunc   func() []string
+		wantErr     bool
+		errContains string
+		verifyFunc  func()
+	}{
+		{
+			name: "recursive add with single directory",
+			setupFunc: func() []string {
+				// Create directory with files
+				testDir := filepath.Join(suite.tempDir, ".config", "app")
+				err := os.MkdirAll(testDir, 0755)
+				suite.Require().NoError(err)
+
+				for i := 1; i <= 3; i++ {
+					file := filepath.Join(testDir, fmt.Sprintf("file%d.txt", i))
+					err := os.WriteFile(file, []byte(fmt.Sprintf("content%d", i)), 0644)
+					suite.Require().NoError(err)
+				}
+
+				return []string{testDir}
+			},
+			wantErr: false,
+			verifyFunc: func() {
+				// Verify all files are now symlinks
+				testDir := filepath.Join(suite.tempDir, ".config", "app")
+				for i := 1; i <= 3; i++ {
+					file := filepath.Join(testDir, fmt.Sprintf("file%d.txt", i))
+					info, err := os.Lstat(file)
+					suite.NoError(err)
+					suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink, "File %d should be symlink", i)
+				}
+			},
+		},
+		{
+			name: "recursive add with nested directories",
+			setupFunc: func() []string {
+				// Create nested structure
+				testDir := filepath.Join(suite.tempDir, ".config", "nested")
+				subDir := filepath.Join(testDir, "sub")
+				err := os.MkdirAll(subDir, 0755)
+				suite.Require().NoError(err)
+
+				// File in parent
+				parentFile := filepath.Join(testDir, "parent.txt")
+				err = os.WriteFile(parentFile, []byte("parent"), 0644)
+				suite.Require().NoError(err)
+
+				// File in subdirectory
+				subFile := filepath.Join(subDir, "child.txt")
+				err = os.WriteFile(subFile, []byte("child"), 0644)
+				suite.Require().NoError(err)
+
+				return []string{testDir}
+			},
+			wantErr: false,
+			verifyFunc: func() {
+				// Verify both files are symlinks
+				parentFile := filepath.Join(suite.tempDir, ".config", "nested", "parent.txt")
+				subFile := filepath.Join(suite.tempDir, ".config", "nested", "sub", "child.txt")
+
+				for _, file := range []string{parentFile, subFile} {
+					info, err := os.Lstat(file)
+					suite.NoError(err)
+					suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+				}
+			},
+		},
+		{
+			name: "recursive add with nonexistent directory",
+			setupFunc: func() []string {
+				return []string{filepath.Join(suite.tempDir, "nonexistent")}
+			},
+			wantErr:     true,
+			errContains: "failed to stat",
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			// Initialize
+			err := suite.lnk.Init()
+			suite.Require().NoError(err)
+
+			// Setup
+			paths := tt.setupFunc()
+
+			// Execute AddRecursive
+			err = suite.lnk.AddRecursive(paths)
+
+			// Verify
+			if tt.wantErr {
+				suite.Error(err, "Expected error for test: %s", tt.name)
+				if tt.errContains != "" {
+					suite.Contains(err.Error(), tt.errContains, "Error message mismatch for: %s", tt.name)
+				}
+			} else {
+				suite.NoError(err, "Unexpected error for test: %s", tt.name)
+				if tt.verifyFunc != nil {
+					tt.verifyFunc()
+				}
+			}
+		})
+	}
+}
+
+// TestRollbackOperations tests the rollback mechanism
+func (suite *CoreTestSuite) TestRollbackOperations() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	tests := []struct {
+		name       string
+		setupFunc  func() ([]func() error, error)
+		wantErr    bool
+		verifyFunc func()
+	}{
+		{
+			name: "rollback file move operation",
+			setupFunc: func() ([]func() error, error) {
+				// Create a test file
+				testFile := filepath.Join(suite.tempDir, "test.txt")
+				err := os.WriteFile(testFile, []byte("content"), 0644)
+				if err != nil {
+					return nil, err
+				}
+
+				// Move file to repo
+				repoFile := filepath.Join(suite.lnk.repoPath, "test.txt")
+				err = os.Rename(testFile, repoFile)
+				if err != nil {
+					return nil, err
+				}
+
+				// Get file info
+				info, err := os.Stat(repoFile)
+				if err != nil {
+					return nil, err
+				}
+
+				// Create rollback action
+				action := suite.lnk.createRollbackAction(testFile, repoFile, "test.txt", info)
+				return []func() error{action}, nil
+			},
+			wantErr: false,
+			verifyFunc: func() {
+				// Verify file is back in original location
+				testFile := filepath.Join(suite.tempDir, "test.txt")
+				suite.FileExists(testFile, "File should be restored to original location")
+
+				// Verify repo file is removed
+				repoFile := filepath.Join(suite.lnk.repoPath, "test.txt")
+				suite.NoFileExists(repoFile, "Repo file should be removed")
+
+				// Verify content is preserved
+				content, err := os.ReadFile(testFile)
+				suite.NoError(err)
+				suite.Equal("content", string(content))
+			},
+		},
+		{
+			name: "rollback multiple operations",
+			setupFunc: func() ([]func() error, error) {
+				actions := []func() error{}
+
+				// Create two test files and move them
+				for i := 1; i <= 2; i++ {
+					testFile := filepath.Join(suite.tempDir, fmt.Sprintf("test%d.txt", i))
+					err := os.WriteFile(testFile, []byte(fmt.Sprintf("content%d", i)), 0644)
+					if err != nil {
+						return nil, err
+					}
+
+					repoFile := filepath.Join(suite.lnk.repoPath, fmt.Sprintf("test%d.txt", i))
+					err = os.Rename(testFile, repoFile)
+					if err != nil {
+						return nil, err
+					}
+
+					info, err := os.Stat(repoFile)
+					if err != nil {
+						return nil, err
+					}
+
+					action := suite.lnk.createRollbackAction(testFile, repoFile, fmt.Sprintf("test%d.txt", i), info)
+					actions = append(actions, action)
+				}
+
+				return actions, nil
+			},
+			wantErr: false,
+			verifyFunc: func() {
+				// Verify both files are restored
+				for i := 1; i <= 2; i++ {
+					testFile := filepath.Join(suite.tempDir, fmt.Sprintf("test%d.txt", i))
+					suite.FileExists(testFile, "File %d should be restored", i)
+
+					content, err := os.ReadFile(testFile)
+					suite.NoError(err)
+					suite.Equal(fmt.Sprintf("content%d", i), string(content))
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			// Setup
+			actions, err := tt.setupFunc()
+			suite.Require().NoError(err, "Setup failed for test: %s", tt.name)
+
+			// Execute rollback
+			suite.lnk.rollbackOperations(actions)
+
+			// Verify
+			if tt.verifyFunc != nil {
+				tt.verifyFunc()
+			}
+		})
+	}
+}
+
+// TestGetRepoPath tests repository path resolution
+func (suite *CoreTestSuite) TestGetRepoPath() {
+	tests := []struct {
+		name       string
+		setupEnv   func()
+		wantSuffix string
+	}{
+		{
+			name: "with XDG_CONFIG_HOME set",
+			setupEnv: func() {
+				suite.T().Setenv("XDG_CONFIG_HOME", "/custom/config")
+			},
+			wantSuffix: "/custom/config/lnk",
+		},
+		{
+			name: "without XDG_CONFIG_HOME defaults to HOME/.config",
+			setupEnv: func() {
+				suite.T().Setenv("XDG_CONFIG_HOME", "")
+				suite.T().Setenv("HOME", suite.tempDir)
+			},
+			wantSuffix: "/.config/lnk",
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			tt.setupEnv()
+			path := GetRepoPath()
+			suite.Contains(path, tt.wantSuffix)
+		})
+	}
+}
+
 func TestCoreSuite(t *testing.T) {
 	suite.Run(t, new(CoreTestSuite))
 }
