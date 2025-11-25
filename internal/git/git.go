@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/yarlson/lnk/internal/errors"
 )
 
 // Git handles Git operations
@@ -34,7 +36,7 @@ func (g *Git) Init() error {
 
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return &GitInitError{Output: string(output), Err: err}
+			return &errors.GitInitError{Output: string(output), Err: err}
 		}
 
 		// Set the default branch to main
@@ -42,7 +44,7 @@ func (g *Git) Init() error {
 		cmd.Dir = g.repoPath
 
 		if err := cmd.Run(); err != nil {
-			return &BranchSetupError{Err: err}
+			return &errors.BranchSetupError{Err: err}
 		}
 	}
 
@@ -60,7 +62,7 @@ func (g *Git) AddRemote(name, url string) error {
 			return nil
 		}
 		// Different URL, error
-		return &RemoteExistsError{Remote: name, ExistingURL: existingURL, NewURL: url}
+		return &errors.RemoteExistsError{Remote: name, ExistingURL: existingURL, NewURL: url}
 	}
 
 	// Remote doesn't exist, add it
@@ -69,7 +71,7 @@ func (g *Git) AddRemote(name, url string) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return &GitCommandError{Command: "remote add", Output: string(output), Err: err}
+		return &errors.GitCommandError{Command: "remote add", Output: string(output), Err: err}
 	}
 
 	return nil
@@ -164,7 +166,7 @@ func (g *Git) Add(filename string) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return &GitCommandError{Command: "add", Output: string(output), Err: err}
+		return &errors.GitCommandError{Command: "add", Output: string(output), Err: err}
 	}
 
 	return nil
@@ -189,7 +191,7 @@ func (g *Git) Remove(filename string) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return &GitCommandError{Command: "rm", Output: string(output), Err: err}
+		return &errors.GitCommandError{Command: "rm", Output: string(output), Err: err}
 	}
 
 	return nil
@@ -207,7 +209,7 @@ func (g *Git) Commit(message string) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return &GitCommandError{Command: "commit", Output: string(output), Err: err}
+		return &errors.GitCommandError{Command: "commit", Output: string(output), Err: err}
 	}
 
 	return nil
@@ -223,7 +225,7 @@ func (g *Git) ensureGitConfig() error {
 		cmd = exec.Command("git", "config", "user.name", "Lnk User")
 		cmd.Dir = g.repoPath
 		if err := cmd.Run(); err != nil {
-			return &GitConfigError{Setting: "user.name", Err: err}
+			return &errors.GitConfigError{Setting: "user.name", Err: err}
 		}
 	}
 
@@ -235,7 +237,7 @@ func (g *Git) ensureGitConfig() error {
 		cmd = exec.Command("git", "config", "user.email", "lnk@localhost")
 		cmd.Dir = g.repoPath
 		if err := cmd.Run(); err != nil {
-			return &GitConfigError{Setting: "user.email", Err: err}
+			return &errors.GitConfigError{Setting: "user.email", Err: err}
 		}
 	}
 
@@ -260,7 +262,7 @@ func (g *Git) GetCommits() ([]string, error) {
 		if strings.Contains(outputStr, "does not have any commits yet") {
 			return []string{}, nil
 		}
-		return nil, &GitCommandError{Command: "log", Output: outputStr, Err: err}
+		return nil, &errors.GitCommandError{Command: "log", Output: outputStr, Err: err}
 	}
 
 	commits := strings.Split(strings.TrimSpace(string(output)), "\n")
@@ -282,18 +284,18 @@ func (g *Git) GetRemoteInfo() (string, error) {
 
 		output, err := cmd.Output()
 		if err != nil {
-			return "", &GitCommandError{Command: "remote", Output: string(output), Err: err}
+			return "", &errors.GitCommandError{Command: "remote", Output: string(output), Err: err}
 		}
 
 		remotes := strings.Split(strings.TrimSpace(string(output)), "\n")
 		if len(remotes) == 0 || remotes[0] == "" {
-			return "", &NoRemoteError{}
+			return "", &errors.NoRemoteError{}
 		}
 
 		// Use the first remote
 		url, err = g.getRemoteURL(remotes[0])
 		if err != nil {
-			return "", &RemoteNotFoundError{Remote: remotes[0], Err: err}
+			return "", &errors.RemoteNotFoundError{Remote: remotes[0], Err: err}
 		}
 	}
 
@@ -319,7 +321,7 @@ func (g *Git) GetStatus() (*StatusInfo, error) {
 	// Check for uncommitted changes
 	dirty, err := g.HasChanges()
 	if err != nil {
-		return nil, &UncommittedChangesError{Err: err}
+		return nil, &errors.UncommittedChangesError{Err: err}
 	}
 
 	// Get the remote tracking branch
@@ -410,7 +412,7 @@ func (g *Git) HasChanges() (bool, error) {
 
 	output, err := cmd.Output()
 	if err != nil {
-		return false, &GitCommandError{Command: "status", Output: string(output), Err: err}
+		return false, &errors.GitCommandError{Command: "status", Output: string(output), Err: err}
 	}
 
 	return len(strings.TrimSpace(string(output))) > 0, nil
@@ -423,7 +425,7 @@ func (g *Git) AddAll() error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return &GitCommandError{Command: "add", Output: string(output), Err: err}
+		return &errors.GitCommandError{Command: "add", Output: string(output), Err: err}
 	}
 
 	return nil
@@ -434,7 +436,7 @@ func (g *Git) Push() error {
 	// First ensure we have a remote configured
 	_, err := g.GetRemoteInfo()
 	if err != nil {
-		return &PushError{Reason: err.Error(), Err: err}
+		return &errors.PushError{Reason: err.Error(), Err: err}
 	}
 
 	cmd := exec.Command("git", "push", "-u", "origin")
@@ -442,7 +444,7 @@ func (g *Git) Push() error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return &PushError{Output: string(output), Err: err}
+		return &errors.PushError{Output: string(output), Err: err}
 	}
 
 	return nil
@@ -453,7 +455,7 @@ func (g *Git) Pull() error {
 	// First ensure we have a remote configured
 	_, err := g.GetRemoteInfo()
 	if err != nil {
-		return &PullError{Reason: err.Error(), Err: err}
+		return &errors.PullError{Reason: err.Error(), Err: err}
 	}
 
 	cmd := exec.Command("git", "pull", "origin")
@@ -461,7 +463,7 @@ func (g *Git) Pull() error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return &PullError{Output: string(output), Err: err}
+		return &errors.PullError{Output: string(output), Err: err}
 	}
 
 	return nil
@@ -471,20 +473,20 @@ func (g *Git) Pull() error {
 func (g *Git) Clone(url string) error {
 	// Remove the directory if it exists to ensure clean clone
 	if err := os.RemoveAll(g.repoPath); err != nil {
-		return &DirectoryRemovalError{Path: g.repoPath, Err: err}
+		return &errors.DirectoryRemovalError{Path: g.repoPath, Err: err}
 	}
 
 	// Create parent directory
 	parentDir := filepath.Dir(g.repoPath)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		return &DirectoryCreationError{Path: parentDir, Err: err}
+		return &errors.DirectoryCreationError{Path: parentDir, Err: err}
 	}
 
 	// Clone the repository
 	cmd := exec.Command("git", "clone", url, g.repoPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return &GitCommandError{Command: "clone", Output: string(output), Err: err}
+		return &errors.GitCommandError{Command: "clone", Output: string(output), Err: err}
 	}
 
 	// Set up upstream tracking for main branch

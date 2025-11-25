@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/yarlson/lnk/internal/errors"
 )
 
 // FileSystem handles file system operations
@@ -20,15 +22,15 @@ func (fs *FileSystem) ValidateFileForAdd(filePath string) error {
 	info, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &FileNotExistsError{Path: filePath, Err: err}
+			return &errors.FileNotExistsError{Path: filePath, Err: err}
 		}
 
-		return &FileCheckError{Err: err}
+		return &errors.FileCheckError{Err: err}
 	}
 
 	// Allow both regular files and directories
 	if !info.Mode().IsRegular() && !info.IsDir() {
-		return &UnsupportedFileTypeError{
+		return &errors.UnsupportedFileTypeError{
 			Path:       filePath,
 			Suggestion: "lnk can only manage regular files and directories",
 		}
@@ -43,14 +45,14 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 	info, err := os.Lstat(filePath) // Use Lstat to not follow symlinks
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &FileNotExistsError{Path: filePath, Err: err}
+			return &errors.FileNotExistsError{Path: filePath, Err: err}
 		}
 
-		return &FileCheckError{Err: err}
+		return &errors.FileCheckError{Err: err}
 	}
 
 	if info.Mode()&os.ModeSymlink == 0 {
-		return &NotManagedByLnkError{
+		return &errors.NotManagedByLnkError{
 			Path:       filePath,
 			Suggestion: "Use 'lnk add' to manage this file first",
 		}
@@ -59,7 +61,7 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 	// Get symlink target and resolve to absolute path
 	target, err := os.Readlink(filePath)
 	if err != nil {
-		return &SymlinkReadError{Err: err}
+		return &errors.SymlinkReadError{Err: err}
 	}
 
 	if !filepath.IsAbs(target) {
@@ -71,7 +73,7 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 	repoPath = filepath.Clean(repoPath)
 
 	if !strings.HasPrefix(target, repoPath+string(filepath.Separator)) && target != repoPath {
-		return &NotManagedByLnkError{
+		return &errors.NotManagedByLnkError{
 			Path:       filePath,
 			Suggestion: "Use 'lnk add' to manage this file first",
 		}
@@ -92,7 +94,7 @@ func (fs *FileSystem) Move(src, dst string, info os.FileInfo) error {
 func (fs *FileSystem) MoveFile(src, dst string) error {
 	// Ensure destination directory exists
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return &DirectoryCreationError{Path: filepath.Dir(dst), Err: err}
+		return &errors.DirectoryCreationError{Path: filepath.Dir(dst), Err: err}
 	}
 
 	// Move the file
@@ -104,7 +106,7 @@ func (fs *FileSystem) CreateSymlink(target, linkPath string) error {
 	// Calculate relative path from linkPath to target
 	relTarget, err := filepath.Rel(filepath.Dir(linkPath), target)
 	if err != nil {
-		return &RelativePathCalculationError{Err: err}
+		return &errors.RelativePathCalculationError{Err: err}
 	}
 
 	// Create the symlink
@@ -115,7 +117,7 @@ func (fs *FileSystem) CreateSymlink(target, linkPath string) error {
 func (fs *FileSystem) MoveDirectory(src, dst string) error {
 	// Ensure destination parent directory exists
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return &DirectoryCreationError{Path: filepath.Dir(dst), Err: err}
+		return &errors.DirectoryCreationError{Path: filepath.Dir(dst), Err: err}
 	}
 
 	// Move the directory
