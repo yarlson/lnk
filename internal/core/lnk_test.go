@@ -2346,7 +2346,7 @@ func (suite *CoreTestSuite) TestRestoreSymlinks() {
 			verifyFunc: func() {
 				homeDir, _ := os.UserHomeDir()
 				targetFile := filepath.Join(homeDir, ".bashrc")
-				defer os.Remove(targetFile)
+				defer func() { _ = os.Remove(targetFile) }()
 
 				// File should be a symlink
 				info, err := os.Lstat(targetFile)
@@ -2395,11 +2395,11 @@ func (suite *CoreTestSuite) TestRestoreSymlinks() {
 // TestInitWithRemoteForce tests force initialization
 func (suite *CoreTestSuite) TestInitWithRemoteForce() {
 	tests := []struct {
-		name       string
-		setupFunc  func() error
-		remoteURL  string
-		force      bool
-		wantErr    bool
+		name        string
+		setupFunc   func() error
+		remoteURL   string
+		force       bool
+		wantErr     bool
 		errContains string
 	}{
 		{
