@@ -2231,6 +2231,267 @@ func (suite *CoreTestSuite) TestGetRepoPath() {
 	}
 }
 
+// TestRemove tests Remove() function with various scenarios
+func (suite *CoreTestSuite) TestRemove() {
+	tests := []struct {
+		name        string
+		setupFunc   func() (string, error)
+		wantErr     bool
+		errContains string
+		verifyFunc  func(filePath string)
+	}{
+		{
+			name: "remove managed file successfully",
+			setupFunc: func() (string, error) {
+				err := suite.lnk.Init()
+				if err != nil {
+					return "", err
+				}
+				testFile := filepath.Join(suite.tempDir, ".testrc")
+				err = os.WriteFile(testFile, []byte("test content"), 0644)
+				if err != nil {
+					return "", err
+				}
+				err = suite.lnk.Add(testFile)
+				return testFile, err
+			},
+			wantErr: false,
+			verifyFunc: func(filePath string) {
+				// File should be regular file again
+				info, err := os.Lstat(filePath)
+				suite.NoError(err)
+				suite.Equal(os.FileMode(0), info.Mode()&os.ModeSymlink, "Should not be symlink")
+
+				// Content should be preserved
+				content, err := os.ReadFile(filePath)
+				suite.NoError(err)
+				suite.Equal("test content", string(content))
+			},
+		},
+		{
+			name: "remove unmanaged file",
+			setupFunc: func() (string, error) {
+				err := suite.lnk.Init()
+				if err != nil {
+					return "", err
+				}
+				testFile := filepath.Join(suite.tempDir, "unmanaged.txt")
+				err = os.WriteFile(testFile, []byte("content"), 0644)
+				return testFile, err
+			},
+			wantErr:     true,
+			errContains: "File is not managed by lnk",
+		},
+		{
+			name: "remove nonexistent file",
+			setupFunc: func() (string, error) {
+				err := suite.lnk.Init()
+				return filepath.Join(suite.tempDir, "nonexistent"), err
+			},
+			wantErr:     true,
+			errContains: "File or directory not found",
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			filePath, err := tt.setupFunc()
+			suite.Require().NoError(err, "Setup failed for test: %s", tt.name)
+
+			// Execute Remove
+			err = suite.lnk.Remove(filePath)
+
+			// Verify
+			if tt.wantErr {
+				suite.Error(err, "Expected error for test: %s", tt.name)
+				if tt.errContains != "" {
+					suite.Contains(err.Error(), tt.errContains, "Error message mismatch for: %s", tt.name)
+				}
+			} else {
+				suite.NoError(err, "Unexpected error for test: %s", tt.name)
+				if tt.verifyFunc != nil {
+					tt.verifyFunc(filePath)
+				}
+			}
+		})
+	}
+}
+
+// TestRestoreSymlinks tests symlink restoration
+func (suite *CoreTestSuite) TestRestoreSymlinks() {
+	tests := []struct {
+		name       string
+		setupFunc  func() error
+		verifyFunc func()
+	}{
+		{
+			name: "restore symlinks for tracked files",
+			setupFunc: func() error {
+				err := suite.lnk.Init()
+				if err != nil {
+					return err
+				}
+
+				// Create file in repo directly (simulating a pull)
+				repoFile := filepath.Join(suite.tempDir, "lnk", ".bashrc")
+				err = os.WriteFile(repoFile, []byte("export PATH"), 0644)
+				if err != nil {
+					return err
+				}
+
+				// Create .lnk tracking file
+				lnkFile := filepath.Join(suite.tempDir, "lnk", ".lnk")
+				return os.WriteFile(lnkFile, []byte(".bashrc\n"), 0644)
+			},
+			verifyFunc: func() {
+				homeDir, _ := os.UserHomeDir()
+				targetFile := filepath.Join(homeDir, ".bashrc")
+				defer os.Remove(targetFile)
+
+				// File should be a symlink
+				info, err := os.Lstat(targetFile)
+				suite.NoError(err)
+				suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+			},
+		},
+		{
+			name: "skip missing files in tracking",
+			setupFunc: func() error {
+				err := suite.lnk.Init()
+				if err != nil {
+					return err
+				}
+
+				// Create .lnk tracking file with missing file
+				lnkFile := filepath.Join(suite.tempDir, "lnk", ".lnk")
+				return os.WriteFile(lnkFile, []byte("nonexistent.txt\n"), 0644)
+			},
+			verifyFunc: func() {
+				homeDir, _ := os.UserHomeDir()
+				targetFile := filepath.Join(homeDir, "nonexistent.txt")
+				// File should not exist
+				_, err := os.Lstat(targetFile)
+				suite.Error(err)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			err := tt.setupFunc()
+			suite.Require().NoError(err, "Setup failed for test: %s", tt.name)
+
+			// Execute RestoreSymlinks
+			_, err = suite.lnk.RestoreSymlinks()
+			suite.NoError(err, "RestoreSymlinks should not error")
+
+			if tt.verifyFunc != nil {
+				tt.verifyFunc()
+			}
+		})
+	}
+}
+
+// TestInitWithRemoteForce tests force initialization
+func (suite *CoreTestSuite) TestInitWithRemoteForce() {
+	tests := []struct {
+		name       string
+		setupFunc  func() error
+		remoteURL  string
+		force      bool
+		wantErr    bool
+		errContains string
+	}{
+		{
+			name: "force init with existing content",
+			setupFunc: func() error {
+				err := suite.lnk.Init()
+				if err != nil {
+					return err
+				}
+				// Create content
+				lnkFile := filepath.Join(suite.tempDir, "lnk", ".lnk")
+				return os.WriteFile(lnkFile, []byte(".bashrc\n"), 0644)
+			},
+			remoteURL: "https://github.com/test/dotfiles.git",
+			force:     true,
+			wantErr:   true, // Will error because clone will fail
+		},
+		{
+			name: "init without remote URL",
+			setupFunc: func() error {
+				return nil
+			},
+			remoteURL: "",
+			force:     false,
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			if tt.setupFunc != nil {
+				err := tt.setupFunc()
+				suite.Require().NoError(err, "Setup failed")
+			}
+
+			err := suite.lnk.InitWithRemoteForce(tt.remoteURL, tt.force)
+
+			if tt.wantErr {
+				suite.Error(err)
+			} else {
+				suite.NoError(err)
+			}
+		})
+	}
+}
+
+// TestAddManagedItem tests managed items tracking
+func (suite *CoreTestSuite) TestAddManagedItem() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	tests := []struct {
+		name         string
+		relativePath string
+		wantErr      bool
+	}{
+		{
+			name:         "add new item",
+			relativePath: ".bashrc",
+			wantErr:      false,
+		},
+		{
+			name:         "add duplicate item (should be idempotent)",
+			relativePath: ".bashrc",
+			wantErr:      false,
+		},
+		{
+			name:         "add another item",
+			relativePath: ".vimrc",
+			wantErr:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			err := suite.lnk.addManagedItem(tt.relativePath)
+			if tt.wantErr {
+				suite.Error(err)
+			} else {
+				suite.NoError(err)
+			}
+		})
+	}
+
+	// Verify all items are tracked
+	items, err := suite.lnk.getManagedItems()
+	suite.NoError(err)
+	suite.Len(items, 2) // Only 2 unique items
+	suite.Contains(items, ".bashrc")
+	suite.Contains(items, ".vimrc")
+}
+
 func TestCoreSuite(t *testing.T) {
 	suite.Run(t, new(CoreTestSuite))
 }
