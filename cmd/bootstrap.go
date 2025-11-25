@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/yarlson/lnk/internal/core"
@@ -47,7 +49,7 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
-			if err := lnk.RunBootstrapScript(scriptPath); err != nil {
+			if err := lnk.RunBootstrapScript(scriptPath, os.Stdout, os.Stderr, os.Stdin); err != nil {
 				return err
 			}
 

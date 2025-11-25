@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/yarlson/lnk/internal/core"
@@ -75,7 +77,7 @@ func newInitCmd() *cobra.Command {
 							return err
 						}
 
-						if err := lnk.RunBootstrapScript(scriptPath); err != nil {
+						if err := lnk.RunBootstrapScript(scriptPath, os.Stdout, os.Stderr, os.Stdin); err != nil {
 							w.WritelnString("").
 								Writeln(Warning("Bootstrap script failed, but repository was initialized successfully")).
 								WriteString("   ").

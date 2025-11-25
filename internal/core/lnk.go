@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -835,8 +836,8 @@ func (l *Lnk) FindBootstrapScript() (string, error) {
 	return "", nil // No bootstrap script found
 }
 
-// RunBootstrapScript executes the bootstrap script
-func (l *Lnk) RunBootstrapScript(scriptName string) error {
+// RunBootstrapScript executes the bootstrap script with configurable I/O
+func (l *Lnk) RunBootstrapScript(scriptName string, stdout, stderr io.Writer, stdin io.Reader) error {
 	scriptPath := filepath.Join(l.repoPath, scriptName)
 
 	// Verify the script exists
@@ -855,10 +856,10 @@ func (l *Lnk) RunBootstrapScript(scriptName string) error {
 	// Set working directory to the repository
 	cmd.Dir = l.repoPath
 
-	// Connect to stdout/stderr for user to see output
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	// Connect to provided I/O streams
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	cmd.Stdin = stdin
 
 	// Run the script
 	if err := cmd.Run(); err != nil {

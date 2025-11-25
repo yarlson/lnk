@@ -788,7 +788,7 @@ func (suite *CoreTestSuite) TestRunBootstrapScript() {
 	suite.Require().NoError(err)
 
 	// Run the bootstrap script
-	err = suite.lnk.RunBootstrapScript("test.sh")
+	err = suite.lnk.RunBootstrapScript("test.sh", os.Stdout, os.Stderr, os.Stdin)
 	suite.NoError(err)
 
 	// Verify the marker file was created
@@ -808,7 +808,7 @@ func (suite *CoreTestSuite) TestRunBootstrapScriptWithError() {
 	suite.Require().NoError(err)
 
 	// Run the bootstrap script - should fail
-	err = suite.lnk.RunBootstrapScript("failing.sh")
+	err = suite.lnk.RunBootstrapScript("failing.sh", os.Stdout, os.Stderr, os.Stdin)
 	suite.Error(err)
 	suite.Contains(err.Error(), "Bootstrap script failed")
 }
@@ -819,7 +819,7 @@ func (suite *CoreTestSuite) TestRunBootstrapScriptNotFound() {
 	suite.Require().NoError(err)
 
 	// Try to run non-existent script
-	err = suite.lnk.RunBootstrapScript("nonexistent.sh")
+	err = suite.lnk.RunBootstrapScript("nonexistent.sh", os.Stdout, os.Stderr, os.Stdin)
 	suite.Error(err)
 	suite.Contains(err.Error(), "Bootstrap script not found")
 }
