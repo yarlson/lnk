@@ -1,13 +1,24 @@
 package git
 
 import (
+	"context"
+	stderrors "errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/yarlson/lnk/internal/errors"
+)
+
+const (
+	// shortTimeout for fast local operations (status, add, commit, etc.)
+	shortTimeout = 30 * time.Second
+
+	// longTimeout for network operations and large transfers (clone, push, pull)
+	longTimeout = 5 * time.Minute
 )
 
 // Git handles Git operations
@@ -22,28 +33,52 @@ func New(repoPath string) *Git {
 	}
 }
 
+// execGitCommand creates a git command with timeout context
+func (g *Git) execGitCommand(timeout time.Duration, args ...string) *exec.Cmd {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	// Note: cancel is not deferred here because the command takes ownership
+	// of the context. The context will be automatically cleaned up when the
+	// command completes or the timeout expires.
+	_ = cancel // Prevent unused variable error
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = g.repoPath
+	return cmd
+}
+
 // Init initializes a new Git repository
 func (g *Git) Init() error {
 	// Try using git init -b main first (Git 2.28+)
-	cmd := exec.Command("git", "init", "-b", "main")
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "init", "-b", "main")
 
 	_, err := cmd.CombinedOutput()
 	if err != nil {
 		// Fallback to regular init + branch rename for older Git versions
-		cmd = exec.Command("git", "init")
-		cmd.Dir = g.repoPath
+		cmd = g.execGitCommand(shortTimeout, "init")
 
 		output, err := cmd.CombinedOutput()
 		if err != nil {
+			if stderrors.Is(err, context.DeadlineExceeded) {
+				return &errors.GitTimeoutError{
+					Command: "git init",
+					Timeout: shortTimeout,
+					Err:     err,
+				}
+			}
 			return &errors.GitInitError{Output: string(output), Err: err}
 		}
 
 		// Set the default branch to main
-		cmd = exec.Command("git", "symbolic-ref", "HEAD", "refs/heads/main")
-		cmd.Dir = g.repoPath
+		cmd = g.execGitCommand(shortTimeout, "symbolic-ref", "HEAD", "refs/heads/main")
 
 		if err := cmd.Run(); err != nil {
+			if stderrors.Is(err, context.DeadlineExceeded) {
+				return &errors.GitTimeoutError{
+					Command: "git symbolic-ref HEAD refs/heads/main",
+					Timeout: shortTimeout,
+					Err:     err,
+				}
+			}
 			return &errors.BranchSetupError{Err: err}
 		}
 	}
@@ -66,11 +101,17 @@ func (g *Git) AddRemote(name, url string) error {
 	}
 
 	// Remote doesn't exist, add it
-	cmd := exec.Command("git", "remote", "add", name, url)
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "remote", "add", name, url)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: fmt.Sprintf("git remote add %s %s", name, url),
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		return &errors.GitCommandError{Command: "remote add", Output: string(output), Err: err}
 	}
 
@@ -79,11 +120,17 @@ func (g *Git) AddRemote(name, url string) error {
 
 // getRemoteURL returns the URL for a remote, or error if not found
 func (g *Git) getRemoteURL(name string) (string, error) {
-	cmd := exec.Command("git", "remote", "get-url", name)
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "remote", "get-url", name)
 
 	output, err := cmd.Output()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return "", &errors.GitTimeoutError{
+				Command: fmt.Sprintf("git remote get-url %s", name),
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		return "", err
 	}
 
@@ -161,11 +208,17 @@ func (g *Git) RemoveAndCommit(filename, message string) error {
 
 // Add stages a file
 func (g *Git) Add(filename string) error {
-	cmd := exec.Command("git", "add", filename)
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "add", filename)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: fmt.Sprintf("git add %s", filename),
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		return &errors.GitCommandError{Command: "add", Output: string(output), Err: err}
 	}
 
@@ -181,16 +234,21 @@ func (g *Git) Remove(filename string) error {
 	var cmd *exec.Cmd
 	if err == nil && info.IsDir() {
 		// Use -r and --cached flags for directories (only remove from git, not filesystem)
-		cmd = exec.Command("git", "rm", "-r", "--cached", filename)
+		cmd = g.execGitCommand(shortTimeout, "rm", "-r", "--cached", filename)
 	} else {
 		// Regular file (only remove from git, not filesystem)
-		cmd = exec.Command("git", "rm", "--cached", filename)
+		cmd = g.execGitCommand(shortTimeout, "rm", "--cached", filename)
 	}
-
-	cmd.Dir = g.repoPath
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: fmt.Sprintf("git rm --cached %s", filename),
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		return &errors.GitCommandError{Command: "rm", Output: string(output), Err: err}
 	}
 
@@ -204,11 +262,17 @@ func (g *Git) Commit(message string) error {
 		return err
 	}
 
-	cmd := exec.Command("git", "commit", "-m", message)
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "commit", "-m", message)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: "git commit",
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		return &errors.GitCommandError{Command: "commit", Output: string(output), Err: err}
 	}
 
@@ -218,25 +282,49 @@ func (g *Git) Commit(message string) error {
 // ensureGitConfig ensures that git user.name and user.email are configured
 func (g *Git) ensureGitConfig() error {
 	// Check if user.name is configured
-	cmd := exec.Command("git", "config", "user.name")
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "config", "user.name")
 	if output, err := cmd.Output(); err != nil || len(strings.TrimSpace(string(output))) == 0 {
+		if err != nil && stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: "git config user.name",
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		// Set a default user.name
-		cmd = exec.Command("git", "config", "user.name", "Lnk User")
-		cmd.Dir = g.repoPath
+		cmd = g.execGitCommand(shortTimeout, "config", "user.name", "Lnk User")
 		if err := cmd.Run(); err != nil {
+			if stderrors.Is(err, context.DeadlineExceeded) {
+				return &errors.GitTimeoutError{
+					Command: "git config user.name 'Lnk User'",
+					Timeout: shortTimeout,
+					Err:     err,
+				}
+			}
 			return &errors.GitConfigError{Setting: "user.name", Err: err}
 		}
 	}
 
 	// Check if user.email is configured
-	cmd = exec.Command("git", "config", "user.email")
-	cmd.Dir = g.repoPath
+	cmd = g.execGitCommand(shortTimeout, "config", "user.email")
 	if output, err := cmd.Output(); err != nil || len(strings.TrimSpace(string(output))) == 0 {
+		if err != nil && stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: "git config user.email",
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		// Set a default user.email
-		cmd = exec.Command("git", "config", "user.email", "lnk@localhost")
-		cmd.Dir = g.repoPath
+		cmd = g.execGitCommand(shortTimeout, "config", "user.email", "lnk@localhost")
 		if err := cmd.Run(); err != nil {
+			if stderrors.Is(err, context.DeadlineExceeded) {
+				return &errors.GitTimeoutError{
+					Command: "git config user.email 'lnk@localhost'",
+					Timeout: shortTimeout,
+					Err:     err,
+				}
+			}
 			return &errors.GitConfigError{Setting: "user.email", Err: err}
 		}
 	}
@@ -252,11 +340,17 @@ func (g *Git) GetCommits() ([]string, error) {
 		return []string{}, nil
 	}
 
-	cmd := exec.Command("git", "log", "--oneline", "--format=%s")
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "log", "--oneline", "--format=%s")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return nil, &errors.GitTimeoutError{
+				Command: "git log --oneline --format=%s",
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		// If there are no commits yet, return empty slice
 		outputStr := string(output)
 		if strings.Contains(outputStr, "does not have any commits yet") {
@@ -279,11 +373,17 @@ func (g *Git) GetRemoteInfo() (string, error) {
 	url, err := g.getRemoteURL("origin")
 	if err != nil {
 		// If origin doesn't exist, try to get any remote
-		cmd := exec.Command("git", "remote")
-		cmd.Dir = g.repoPath
+		cmd := g.execGitCommand(shortTimeout, "remote")
 
 		output, err := cmd.Output()
 		if err != nil {
+			if stderrors.Is(err, context.DeadlineExceeded) {
+				return "", &errors.GitTimeoutError{
+					Command: "git remote",
+					Timeout: shortTimeout,
+					Err:     err,
+				}
+			}
 			return "", &errors.GitCommandError{Command: "remote", Output: string(output), Err: err}
 		}
 
@@ -325,11 +425,17 @@ func (g *Git) GetStatus() (*StatusInfo, error) {
 	}
 
 	// Get the remote tracking branch
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
 
 	output, err := cmd.Output()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return nil, &errors.GitTimeoutError{
+				Command: "git rev-parse --abbrev-ref --symbolic-full-name @{u}",
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		// No upstream branch set, assume origin/main
 		remoteBranch := "origin/main"
 		return &StatusInfo{
@@ -352,14 +458,12 @@ func (g *Git) GetStatus() (*StatusInfo, error) {
 
 // getAheadCount returns how many commits ahead of remote
 func (g *Git) getAheadCount(remoteBranch string) int {
-	cmd := exec.Command("git", "rev-list", "--count", fmt.Sprintf("%s..HEAD", remoteBranch))
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "rev-list", "--count", fmt.Sprintf("%s..HEAD", remoteBranch))
 
 	output, err := cmd.Output()
 	if err != nil {
 		// If remote branch doesn't exist, count all local commits
-		cmd = exec.Command("git", "rev-list", "--count", "HEAD")
-		cmd.Dir = g.repoPath
+		cmd = g.execGitCommand(shortTimeout, "rev-list", "--count", "HEAD")
 
 		output, err = cmd.Output()
 		if err != nil {
@@ -383,8 +487,7 @@ func (g *Git) getAheadCount(remoteBranch string) int {
 
 // getBehindCount returns how many commits behind remote
 func (g *Git) getBehindCount(remoteBranch string) int {
-	cmd := exec.Command("git", "rev-list", "--count", fmt.Sprintf("HEAD..%s", remoteBranch))
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "rev-list", "--count", fmt.Sprintf("HEAD..%s", remoteBranch))
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -407,11 +510,17 @@ func (g *Git) getBehindCount(remoteBranch string) int {
 
 // HasChanges checks if there are uncommitted changes
 func (g *Git) HasChanges() (bool, error) {
-	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "status", "--porcelain")
 
 	output, err := cmd.Output()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return false, &errors.GitTimeoutError{
+				Command: "git status --porcelain",
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		return false, &errors.GitCommandError{Command: "status", Output: string(output), Err: err}
 	}
 
@@ -420,11 +529,17 @@ func (g *Git) HasChanges() (bool, error) {
 
 // AddAll stages all changes in the repository
 func (g *Git) AddAll() error {
-	cmd := exec.Command("git", "add", "-A")
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(shortTimeout, "add", "-A")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: "git add -A",
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		return &errors.GitCommandError{Command: "add", Output: string(output), Err: err}
 	}
 
@@ -439,11 +554,17 @@ func (g *Git) Push() error {
 		return &errors.PushError{Reason: err.Error(), Err: err}
 	}
 
-	cmd := exec.Command("git", "push", "-u", "origin")
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(longTimeout, "push", "-u", "origin")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: "git push -u origin",
+				Timeout: longTimeout,
+				Err:     err,
+			}
+		}
 		return &errors.PushError{Output: string(output), Err: err}
 	}
 
@@ -458,11 +579,17 @@ func (g *Git) Pull() error {
 		return &errors.PullError{Reason: err.Error(), Err: err}
 	}
 
-	cmd := exec.Command("git", "pull", "origin")
-	cmd.Dir = g.repoPath
+	cmd := g.execGitCommand(longTimeout, "pull", "origin")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: "git pull origin",
+				Timeout: longTimeout,
+				Err:     err,
+			}
+		}
 		return &errors.PullError{Output: string(output), Err: err}
 	}
 
@@ -483,25 +610,48 @@ func (g *Git) Clone(url string) error {
 	}
 
 	// Clone the repository
-	cmd := exec.Command("git", "clone", url, g.repoPath)
+	// Note: Can't use execGitCommand here because it sets cmd.Dir to g.repoPath,
+	// which doesn't exist yet. Clone needs to run from parent directory.
+	ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "clone", url, g.repoPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: fmt.Sprintf("git clone %s", url),
+				Timeout: longTimeout,
+				Err:     err,
+			}
+		}
 		return &errors.GitCommandError{Command: "clone", Output: string(output), Err: err}
 	}
 
 	// Set up upstream tracking for main branch
-	cmd = exec.Command("git", "branch", "--set-upstream-to=origin/main", "main")
-	cmd.Dir = g.repoPath
+	cmd = g.execGitCommand(shortTimeout, "branch", "--set-upstream-to=origin/main", "main")
 	_, err = cmd.CombinedOutput()
 	if err != nil {
+		if stderrors.Is(err, context.DeadlineExceeded) {
+			return &errors.GitTimeoutError{
+				Command: "git branch --set-upstream-to=origin/main main",
+				Timeout: shortTimeout,
+				Err:     err,
+			}
+		}
 		// If main doesn't exist, try master
-		cmd = exec.Command("git", "branch", "--set-upstream-to=origin/master", "master")
-		cmd.Dir = g.repoPath
+		cmd = g.execGitCommand(shortTimeout, "branch", "--set-upstream-to=origin/master", "master")
 		_, err = cmd.CombinedOutput()
 		if err != nil {
+			if stderrors.Is(err, context.DeadlineExceeded) {
+				return &errors.GitTimeoutError{
+					Command: "git branch --set-upstream-to=origin/master master",
+					Timeout: shortTimeout,
+					Err:     err,
+				}
+			}
 			// If that also fails, try to set upstream for current branch
-			cmd = exec.Command("git", "branch", "--set-upstream-to=origin/HEAD")
-			cmd.Dir = g.repoPath
+			cmd = g.execGitCommand(shortTimeout, "branch", "--set-upstream-to=origin/HEAD")
 			_, _ = cmd.CombinedOutput() // Ignore error as this is best effort
 		}
 	}

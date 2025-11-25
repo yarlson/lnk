@@ -1,5 +1,10 @@
 package errors
 
+import (
+	"fmt"
+	"time"
+)
+
 // Shared error types for fs and git packages
 // These errors represent infrastructure-level failures
 
@@ -276,5 +281,20 @@ func (e *PullError) Error() string {
 }
 
 func (e *PullError) Unwrap() error {
+	return e.Err
+}
+
+// GitTimeoutError represents a git operation that exceeded its timeout
+type GitTimeoutError struct {
+	Command string
+	Timeout time.Duration
+	Err     error
+}
+
+func (e *GitTimeoutError) Error() string {
+	return fmt.Sprintf("git operation timed out after %v: %s", e.Timeout, e.Command)
+}
+
+func (e *GitTimeoutError) Unwrap() error {
 	return e.Err
 }
