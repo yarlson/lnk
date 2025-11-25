@@ -31,7 +31,7 @@ func WithHost(host string) Option {
 
 // NewLnk creates a new Lnk instance with optional configuration
 func NewLnk(opts ...Option) *Lnk {
-	repoPath := getRepoPath()
+	repoPath := GetRepoPath()
 	lnk := &Lnk{
 		repoPath: repoPath,
 		host:     "",
@@ -83,8 +83,9 @@ func GetCurrentHostname() (string, error) {
 	return hostname, nil
 }
 
-// getRepoPath returns the path to the lnk repository directory
-func getRepoPath() string {
+// GetRepoPath returns the path to the lnk repository directory
+// It respects XDG_CONFIG_HOME if set, otherwise defaults to ~/.config/lnk
+func GetRepoPath() string {
 	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfig == "" {
 		homeDir, err := os.UserHomeDir()
