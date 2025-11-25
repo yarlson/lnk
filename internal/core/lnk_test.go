@@ -1597,6 +1597,91 @@ func (suite *CoreTestSuite) TestInitWithRemote_ErrorMessage_ContainsSuggestedCom
 	suite.Contains(err.Error(), "instead of", "Should explain alternative")
 }
 
+// TestGetRelativePath tests path conversion with various scenarios
+func (suite *CoreTestSuite) TestGetRelativePath() {
+	tests := []struct {
+		name       string
+		path       string
+		homeDir    string
+		want       string
+		wantErr    bool
+		errMessage string
+	}{
+		{
+			name:    "file in home root",
+			path:    "/home/user/.bashrc",
+			homeDir: "/home/user",
+			want:    ".bashrc",
+			wantErr: false,
+		},
+		{
+			name:    "file in home subdirectory",
+			path:    "/home/user/.config/app/config.json",
+			homeDir: "/home/user",
+			want:    ".config/app/config.json",
+			wantErr: false,
+		},
+		{
+			name:    "file outside home",
+			path:    "/etc/config",
+			homeDir: "/home/user",
+			want:    "etc/config",
+			wantErr: false,
+		},
+		{
+			name:    "path with trailing slash",
+			path:    "/home/user/.config/",
+			homeDir: "/home/user",
+			want:    ".config",
+			wantErr: false,
+		},
+		{
+			name:    "path equal to home",
+			path:    "/home/user",
+			homeDir: "/home/user",
+			want:    ".",
+			wantErr: false,
+		},
+		{
+			name:       "empty path",
+			path:       "",
+			homeDir:    "/home/user",
+			want:       "",
+			wantErr:    true,
+			errMessage: "failed to get relative path",
+		},
+		{
+			name:       "relative path (should error)",
+			path:       ".bashrc",
+			homeDir:    "/home/user",
+			want:       "",
+			wantErr:    true,
+			errMessage: "failed to get relative path",
+		},
+	}
+
+	for _, tt := range tests {
+		suite.Run(tt.name, func() {
+			// Set HOME env for the test
+			suite.T().Setenv("HOME", tt.homeDir)
+
+			// Call getRelativePath
+			got, err := getRelativePath(tt.path)
+
+			// Verify error expectation
+			if tt.wantErr {
+				suite.Error(err, "Expected error for test case: %s", tt.name)
+				if tt.errMessage != "" {
+					suite.Contains(err.Error(), tt.errMessage, "Error message mismatch for: %s", tt.name)
+				}
+			} else {
+				suite.NoError(err, "Unexpected error for test case: %s", tt.name)
+				suite.Equal(tt.want, got, "Path mismatch for test case: %s", tt.name)
+			}
+		})
+	}
+}
+
 func TestCoreSuite(t *testing.T) {
 	suite.Run(t, new(CoreTestSuite))
 }
