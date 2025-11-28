@@ -8,6 +8,11 @@ linters:
     - staticcheck
     - unused
     - misspell
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - -ST1005 # Allow capitalized error strings and punctuation
 
 issues:
   max-issues-per-linter: 0

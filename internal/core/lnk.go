@@ -1,6 +1,8 @@
+// Package core implements the business logic for lnk.
 package core
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +13,19 @@ import (
 
 	"github.com/yarlson/lnk/internal/fs"
 	"github.com/yarlson/lnk/internal/git"
+	"github.com/yarlson/lnk/internal/lnkerr"
+)
+
+// Sentinel errors for lnk operations.
+var (
+	ErrManagedFilesExist = errors.New("Directory already contains managed files")
+	ErrGitRepoExists     = errors.New("Directory contains an existing Git repository")
+	ErrAlreadyManaged    = errors.New("File is already managed by lnk")
+	ErrNotManaged        = errors.New("File is not managed by lnk")
+	ErrNotInitialized    = errors.New("Lnk repository not initialized")
+	ErrBootstrapNotFound = errors.New("Bootstrap script not found")
+	ErrBootstrapFailed   = errors.New("Bootstrap script failed with error")
+	ErrBootstrapPerms    = errors.New("Failed to make bootstrap script executable")
 )
 
 // Lnk represents the main application logic
@@ -158,7 +173,7 @@ func (l *Lnk) InitWithRemoteForce(remoteURL string, force bool) error {
 		// Safety check: prevent data loss by checking for existing managed files
 		if l.HasUserContent() {
 			if !force {
-				return ErrDirectoryContainsManagedFiles(l.repoPath)
+				return lnkerr.WithPathAndSuggestion(ErrManagedFilesExist, l.repoPath, "use 'lnk pull' to update from remote instead of 'lnk init -r'")
 			}
 		}
 		// Clone from remote
@@ -178,7 +193,7 @@ func (l *Lnk) InitWithRemoteForce(remoteURL string, force bool) error {
 			return nil
 		} else {
 			// It's not a lnk repository, error to prevent data loss
-			return ErrDirectoryContainsGitRepo(l.repoPath)
+			return lnkerr.WithPathAndSuggestion(ErrGitRepoExists, l.repoPath, "backup or move the existing repository before initializing lnk")
 		}
 	}
 
@@ -232,7 +247,7 @@ func (l *Lnk) Add(filePath string) error {
 	}
 	for _, item := range managedItems {
 		if item == relativePath {
-			return ErrFileAlreadyManaged(relativePath)
+			return lnkerr.WithPath(ErrAlreadyManaged, relativePath)
 		}
 	}
 
@@ -334,7 +349,7 @@ func (l *Lnk) AddMultiple(paths []string) error {
 		}
 		for _, item := range managedItems {
 			if item == relativePath {
-				return ErrFileAlreadyManaged(relativePath)
+				return lnkerr.WithPath(ErrAlreadyManaged, relativePath)
 			}
 		}
 
@@ -478,7 +493,7 @@ func (l *Lnk) Remove(filePath string) error {
 		}
 	}
 	if !found {
-		return ErrFileNotManaged(relativePath)
+		return lnkerr.WithPath(ErrNotManaged, relativePath)
 	}
 
 	// Get the target path in the repository
@@ -564,7 +579,7 @@ func (l *Lnk) RemoveForce(filePath string) error {
 		}
 	}
 	if !found {
-		return ErrFileNotManaged(relativePath)
+		return lnkerr.WithPath(ErrNotManaged, relativePath)
 	}
 
 	// Remove symlink if it exists (ignore errors - it may already be gone)
@@ -624,7 +639,7 @@ type StatusInfo struct {
 func (l *Lnk) Status() (*StatusInfo, error) {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return nil, ErrRepositoryNotInitialized()
+		return nil, lnkerr.WithSuggestion(ErrNotInitialized, "run 'lnk init' first")
 	}
 
 	gitStatus, err := l.git.GetStatus()
@@ -644,7 +659,7 @@ func (l *Lnk) Status() (*StatusInfo, error) {
 func (l *Lnk) Push(message string) error {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return ErrRepositoryNotInitialized()
+		return lnkerr.WithSuggestion(ErrNotInitialized, "run 'lnk init' first")
 	}
 
 	// Check if there are any changes
@@ -674,7 +689,7 @@ func (l *Lnk) Push(message string) error {
 func (l *Lnk) Pull() ([]string, error) {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return nil, ErrRepositoryNotInitialized()
+		return nil, lnkerr.WithSuggestion(ErrNotInitialized, "run 'lnk init' first")
 	}
 
 	// Pull changes from remote (this will be a no-op in tests since we don't have real remotes)
@@ -695,7 +710,7 @@ func (l *Lnk) Pull() ([]string, error) {
 func (l *Lnk) List() ([]string, error) {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return nil, ErrRepositoryNotInitialized()
+		return nil, lnkerr.WithSuggestion(ErrNotInitialized, "run 'lnk init' first")
 	}
 
 	// Get managed items from .lnk file
@@ -895,7 +910,7 @@ func (l *Lnk) writeManagedItems(items []string) error {
 func (l *Lnk) FindBootstrapScript() (string, error) {
 	// Check if repository is initialized
 	if !l.git.IsGitRepository() {
-		return "", ErrRepositoryNotInitialized()
+		return "", lnkerr.WithSuggestion(ErrNotInitialized, "run 'lnk init' first")
 	}
 
 	// Look for bootstrap.sh - simple, opinionated choice
@@ -913,12 +928,12 @@ func (l *Lnk) RunBootstrapScript(scriptName string, stdout, stderr io.Writer, st
 
 	// Verify the script exists
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		return ErrBootstrapScriptNotFound(scriptName)
+		return lnkerr.WithPath(ErrBootstrapNotFound, scriptName)
 	}
 
 	// Make sure it's executable
 	if err := os.Chmod(scriptPath, 0755); err != nil {
-		return ErrBootstrapScriptNotExecutable(err)
+		return lnkerr.Wrap(ErrBootstrapPerms)
 	}
 
 	// Run with bash (since we only support bootstrap.sh)
@@ -934,7 +949,7 @@ func (l *Lnk) RunBootstrapScript(scriptName string, stdout, stderr io.Writer, st
 
 	// Run the script
 	if err := cmd.Run(); err != nil {
-		return ErrBootstrapScriptFailed(err)
+		return lnkerr.WithSuggestion(ErrBootstrapFailed, err.Error())
 	}
 
 	return nil
@@ -1061,7 +1076,7 @@ func (l *Lnk) addMultipleWithProgress(paths []string, progress ProgressCallback)
 		}
 		for _, item := range managedItems {
 			if item == relativePath {
-				return ErrFileAlreadyManaged(relativePath)
+				return lnkerr.WithPath(ErrAlreadyManaged, relativePath)
 			}
 		}
 

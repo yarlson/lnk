@@ -1,11 +1,24 @@
+// Package fs provides file system operations for lnk.
 package fs
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/yarlson/lnk/internal/errors"
+	"github.com/yarlson/lnk/internal/lnkerr"
+)
+
+// Sentinel errors for file system operations.
+var (
+	ErrFileNotExists   = errors.New("File or directory not found")
+	ErrFileCheck       = errors.New("Unable to access file. Please check file permissions and try again.")
+	ErrUnsupportedType = errors.New("Cannot manage this type of file")
+	ErrNotManaged      = errors.New("File is not managed by lnk")
+	ErrSymlinkRead     = errors.New("Unable to read symlink. The file may be corrupted or have invalid permissions.")
+	ErrDirCreate       = errors.New("Failed to create directory. Please check permissions and available disk space.")
+	ErrRelativePath    = errors.New("Unable to create symlink due to path configuration issues. Please check file locations.")
 )
 
 // FileSystem handles file system operations
@@ -22,18 +35,15 @@ func (fs *FileSystem) ValidateFileForAdd(filePath string) error {
 	info, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &errors.FileNotExistsError{Path: filePath, Err: err}
+			return lnkerr.WithPath(ErrFileNotExists, filePath)
 		}
 
-		return &errors.FileCheckError{Err: err}
+		return lnkerr.WithPath(ErrFileCheck, filePath)
 	}
 
 	// Allow both regular files and directories
 	if !info.Mode().IsRegular() && !info.IsDir() {
-		return &errors.UnsupportedFileTypeError{
-			Path:       filePath,
-			Suggestion: "lnk can only manage regular files and directories",
-		}
+		return lnkerr.WithPathAndSuggestion(ErrUnsupportedType, filePath, "lnk can only manage regular files and directories")
 	}
 
 	return nil
@@ -45,23 +55,20 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 	info, err := os.Lstat(filePath) // Use Lstat to not follow symlinks
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &errors.FileNotExistsError{Path: filePath, Err: err}
+			return lnkerr.WithPath(ErrFileNotExists, filePath)
 		}
 
-		return &errors.FileCheckError{Err: err}
+		return lnkerr.WithPath(ErrFileCheck, filePath)
 	}
 
 	if info.Mode()&os.ModeSymlink == 0 {
-		return &errors.NotManagedByLnkError{
-			Path:       filePath,
-			Suggestion: "Use 'lnk add' to manage this file first",
-		}
+		return lnkerr.WithPathAndSuggestion(ErrNotManaged, filePath, "use 'lnk add' to manage this file first")
 	}
 
 	// Get symlink target and resolve to absolute path
 	target, err := os.Readlink(filePath)
 	if err != nil {
-		return &errors.SymlinkReadError{Err: err}
+		return lnkerr.WithPath(ErrSymlinkRead, filePath)
 	}
 
 	if !filepath.IsAbs(target) {
@@ -73,10 +80,7 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 	repoPath = filepath.Clean(repoPath)
 
 	if !strings.HasPrefix(target, repoPath+string(filepath.Separator)) && target != repoPath {
-		return &errors.NotManagedByLnkError{
-			Path:       filePath,
-			Suggestion: "Use 'lnk add' to manage this file first",
-		}
+		return lnkerr.WithPathAndSuggestion(ErrNotManaged, filePath, "use 'lnk add' to manage this file first")
 	}
 
 	return nil
@@ -94,7 +98,7 @@ func (fs *FileSystem) Move(src, dst string, info os.FileInfo) error {
 func (fs *FileSystem) MoveFile(src, dst string) error {
 	// Ensure destination directory exists
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return &errors.DirectoryCreationError{Path: filepath.Dir(dst), Err: err}
+		return lnkerr.WithPath(ErrDirCreate, filepath.Dir(dst))
 	}
 
 	// Move the file
@@ -106,7 +110,7 @@ func (fs *FileSystem) CreateSymlink(target, linkPath string) error {
 	// Calculate relative path from linkPath to target
 	relTarget, err := filepath.Rel(filepath.Dir(linkPath), target)
 	if err != nil {
-		return &errors.RelativePathCalculationError{Err: err}
+		return lnkerr.Wrap(ErrRelativePath)
 	}
 
 	// Create the symlink
@@ -117,7 +121,7 @@ func (fs *FileSystem) CreateSymlink(target, linkPath string) error {
 func (fs *FileSystem) MoveDirectory(src, dst string) error {
 	// Ensure destination parent directory exists
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return &errors.DirectoryCreationError{Path: filepath.Dir(dst), Err: err}
+		return lnkerr.WithPath(ErrDirCreate, filepath.Dir(dst))
 	}
 
 	// Move the directory

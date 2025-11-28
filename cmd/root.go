@@ -1,14 +1,14 @@
+// Package cmd implements the CLI commands for lnk.
 package cmd
 
 import (
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
-	"github.com/yarlson/lnk/internal/core"
-	"github.com/yarlson/lnk/internal/errors"
+	"github.com/yarlson/lnk/internal/lnkerr"
 )
 
 var (
@@ -106,10 +106,9 @@ func Execute() {
 func DisplayError(err error) {
 	w := GetErrorWriter()
 
-	// Handle structured errors from core package
-	var lnkErr *core.LnkError
-	if stderrors.As(err, &lnkErr) {
-		w.Write(Error(lnkErr.Message))
+	var lnkErr *lnkerr.Error
+	if errors.As(err, &lnkErr) {
+		w.Write(Error(lnkErr.Err.Error()))
 		if lnkErr.Path != "" {
 			w.WritelnString("").
 				WriteString("   ").
@@ -124,168 +123,5 @@ func DisplayError(err error) {
 		return
 	}
 
-	// Handle fs/git errors with paths
-	var fileNotExistsErr *errors.FileNotExistsError
-	if stderrors.As(err, &fileNotExistsErr) {
-		w.Write(Error(err.Error())).
-			WritelnString("").
-			WriteString("   ").
-			Write(Colored(fileNotExistsErr.Path, ColorRed)).
-			WritelnString("")
-		return
-	}
-
-	var unsupportedFileErr *errors.UnsupportedFileTypeError
-	if stderrors.As(err, &unsupportedFileErr) {
-		w.Write(Error(err.Error())).
-			WritelnString("").
-			WriteString("   ").
-			Write(Colored(unsupportedFileErr.Path, ColorRed))
-		if unsupportedFileErr.Suggestion != "" {
-			w.WritelnString("").
-				WriteString("   ").
-				Write(Info(unsupportedFileErr.Suggestion))
-		}
-		w.WritelnString("")
-		return
-	}
-
-	var notManagedErr *errors.NotManagedByLnkError
-	if stderrors.As(err, &notManagedErr) {
-		w.Write(Error(err.Error())).
-			WritelnString("").
-			WriteString("   ").
-			Write(Colored(notManagedErr.Path, ColorRed))
-		if notManagedErr.Suggestion != "" {
-			w.WritelnString("").
-				WriteString("   ").
-				Write(Info(notManagedErr.Suggestion))
-		}
-		w.WritelnString("")
-		return
-	}
-
-	var dirCreationErr *errors.DirectoryCreationError
-	if stderrors.As(err, &dirCreationErr) {
-		w.Write(Error(err.Error())).
-			WritelnString("").
-			WriteString("   ").
-			Write(Colored(dirCreationErr.Path, ColorRed)).
-			WritelnString("")
-		return
-	}
-
-	var dirRemovalErr *errors.DirectoryRemovalError
-	if stderrors.As(err, &dirRemovalErr) {
-		w.Write(Error(err.Error())).
-			WritelnString("").
-			WriteString("   ").
-			Write(Colored(dirRemovalErr.Path, ColorRed)).
-			WritelnString("")
-		return
-	}
-
-	// Handle git errors with remotes
-	var remoteExistsErr *errors.RemoteExistsError
-	if stderrors.As(err, &remoteExistsErr) {
-		w.Write(Error(err.Error())).
-			WritelnString("").
-			WriteString("   Remote: ").
-			Write(Colored(remoteExistsErr.Remote, ColorCyan)).
-			WritelnString("")
-		return
-	}
-
-	var remoteNotFoundErr *errors.RemoteNotFoundError
-	if stderrors.As(err, &remoteNotFoundErr) {
-		w.Write(Error(err.Error())).
-			WritelnString("").
-			WriteString("   Remote: ").
-			Write(Colored(remoteNotFoundErr.Remote, ColorCyan)).
-			WritelnString("")
-		return
-	}
-
-	// Handle git errors with reasons
-	var pushErr *errors.PushError
-	if stderrors.As(err, &pushErr) {
-		w.Write(Error(err.Error()))
-		if pushErr.Reason != "" {
-			w.WritelnString("").
-				WriteString("   Reason: ").
-				Write(Colored(pushErr.Reason, ColorYellow))
-		}
-		w.WritelnString("")
-		return
-	}
-
-	var pullErr *errors.PullError
-	if stderrors.As(err, &pullErr) {
-		w.Write(Error(err.Error()))
-		if pullErr.Reason != "" {
-			w.WritelnString("").
-				WriteString("   Reason: ").
-				Write(Colored(pullErr.Reason, ColorYellow))
-		}
-		w.WritelnString("")
-		return
-	}
-
-	// Handle other common errors
-	var fileCheckErr *errors.FileCheckError
-	if stderrors.As(err, &fileCheckErr) {
-		w.Writeln(Error(err.Error()))
-		return
-	}
-
-	var symlinkReadErr *errors.SymlinkReadError
-	if stderrors.As(err, &symlinkReadErr) {
-		w.Writeln(Error(err.Error()))
-		return
-	}
-
-	var relPathErr *errors.RelativePathCalculationError
-	if stderrors.As(err, &relPathErr) {
-		w.Writeln(Error(err.Error()))
-		return
-	}
-
-	var gitInitErr *errors.GitInitError
-	if stderrors.As(err, &gitInitErr) {
-		w.Writeln(Error(err.Error()))
-		return
-	}
-
-	var branchSetupErr *errors.BranchSetupError
-	if stderrors.As(err, &branchSetupErr) {
-		w.Writeln(Error(err.Error()))
-		return
-	}
-
-	var gitCmdErr *errors.GitCommandError
-	if stderrors.As(err, &gitCmdErr) {
-		w.Writeln(Error(err.Error()))
-		return
-	}
-
-	var noRemoteErr *errors.NoRemoteError
-	if stderrors.As(err, &noRemoteErr) {
-		w.Writeln(Error(err.Error()))
-		return
-	}
-
-	var gitConfigErr *errors.GitConfigError
-	if stderrors.As(err, &gitConfigErr) {
-		w.Writeln(Error(err.Error()))
-		return
-	}
-
-	var uncommittedErr *errors.UncommittedChangesError
-	if stderrors.As(err, &uncommittedErr) {
-		w.Writeln(Error(err.Error()))
-		return
-	}
-
-	// Handle generic errors
 	w.Writeln(Error(err.Error()))
 }

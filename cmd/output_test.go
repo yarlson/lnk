@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 
-	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/lnkerr"
 )
 
 func TestOutputConfig(t *testing.T) {
@@ -209,32 +210,30 @@ func TestPredefinedMessages(t *testing.T) {
 func TestStructuredErrors(t *testing.T) {
 	tests := []struct {
 		name        string
-		err         *core.LnkError
+		err         *lnkerr.Error
 		config      OutputConfig
 		contains    []string
 		notContains []string
 	}{
 		{
 			name: "structured error with full formatting",
-			err: &core.LnkError{
-				Message:    "Something went wrong",
-				Suggestion: "Try this instead",
+			err: &lnkerr.Error{
+				Err:        errors.New("something went wrong"),
 				Path:       "/some/path",
-				ErrorType:  "test_error",
+				Suggestion: "try this instead",
 			},
 			config:   OutputConfig{Colors: true, Emoji: true},
-			contains: []string{"❌", "Something went wrong", "/some/path", "💡", "Try this instead"},
+			contains: []string{"❌", "something went wrong", "/some/path", "💡", "try this instead"},
 		},
 		{
 			name: "structured error without emojis",
-			err: &core.LnkError{
-				Message:    "Something went wrong",
-				Suggestion: "Try this instead",
+			err: &lnkerr.Error{
+				Err:        errors.New("something went wrong"),
 				Path:       "/some/path",
-				ErrorType:  "test_error",
+				Suggestion: "try this instead",
 			},
 			config:      OutputConfig{Colors: true, Emoji: false},
-			contains:    []string{"Something went wrong", "/some/path", "Try this instead"},
+			contains:    []string{"something went wrong", "/some/path", "try this instead"},
 			notContains: []string{"❌", "💡"},
 		},
 	}
@@ -244,8 +243,7 @@ func TestStructuredErrors(t *testing.T) {
 			var buf bytes.Buffer
 			w := NewWriter(&buf, tt.config)
 
-			// Test the component messages directly
-			_ = w.Write(Error(tt.err.Message))
+			_ = w.Write(Error(tt.err.Err.Error()))
 			if tt.err.Path != "" {
 				_ = w.WriteString("\n   ")
 				_ = w.Write(Colored(tt.err.Path, ColorRed))
