@@ -124,6 +124,18 @@ func GetRepoPath() string {
 	return filepath.Join(xdgConfig, "lnk")
 }
 
+// GetDisplayPath returns a display-friendly path string, replacing home directory with ~
+func GetDisplayPath(path string) string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if strings.HasPrefix(path, homeDir) {
+		return "~" + strings.TrimPrefix(path, homeDir)
+	}
+	return path
+}
+
 // getHostStoragePath returns the storage path for host-specific or common files
 func (l *Lnk) getHostStoragePath() string {
 	if l.host == "" {

@@ -2,24 +2,11 @@ package cmd
 
 import (
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/yarlson/lnk/internal/core"
 )
-
-// getDisplayPath returns a display-friendly path string, replacing home directory with ~
-func getDisplayPath(path string) string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	if strings.HasPrefix(path, homeDir) {
-		return "~" + strings.TrimPrefix(path, homeDir)
-	}
-	return path
-}
 
 func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -38,7 +25,7 @@ func newInitCmd() *cobra.Command {
 
 			// Get the actual repository path for display
 			repoPath := core.GetRepoPath()
-			displayPath := getDisplayPath(repoPath)
+			displayPath := core.GetDisplayPath(repoPath)
 
 			// Show warning when force is used and there are managed files to overwrite
 			if force && remote != "" && lnk.HasUserContent() {
