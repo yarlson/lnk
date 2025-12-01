@@ -2,11 +2,24 @@ package cmd
 
 import (
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/yarlson/lnk/internal/core"
 )
+
+// getDisplayPath returns a display-friendly path string, replacing home directory with ~
+func getDisplayPath(path string) string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if strings.HasPrefix(path, homeDir) {
+		return "~" + strings.TrimPrefix(path, homeDir)
+	}
+	return path
+}
 
 func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -22,6 +35,10 @@ func newInitCmd() *cobra.Command {
 
 			lnk := core.NewLnk()
 			w := GetWriter(cmd)
+
+			// Get the actual repository path for display
+			repoPath := core.GetRepoPath()
+			displayPath := getDisplayPath(repoPath)
 
 			// Show warning when force is used and there are managed files to overwrite
 			if force && remote != "" && lnk.HasUserContent() {
@@ -45,7 +62,7 @@ func newInitCmd() *cobra.Command {
 					Writeln(Colored(remote, ColorCyan)).
 					WriteString("   ").
 					Write(Message{Text: "Location: ", Emoji: "📁"}).
-					Writeln(Colored("~/.config/lnk", ColorGray))
+					Writeln(Colored(displayPath, ColorGray))
 
 				if err := w.Err(); err != nil {
 					return err
@@ -117,7 +134,7 @@ func newInitCmd() *cobra.Command {
 				w.Writeln(Target("Initialized empty lnk repository")).
 					WriteString("   ").
 					Write(Message{Text: "Location: ", Emoji: "📁"}).
-					Writeln(Colored("~/.config/lnk", ColorGray)).
+					Writeln(Colored(displayPath, ColorGray)).
 					WritelnString("").
 					Writeln(Info("Next steps:")).
 					WriteString("   • Run ").
