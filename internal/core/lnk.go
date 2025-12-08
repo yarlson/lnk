@@ -100,8 +100,17 @@ func GetCurrentHostname() (string, error) {
 }
 
 // GetRepoPath returns the path to the lnk repository directory
-// It respects XDG_CONFIG_HOME if set, otherwise defaults to ~/.config/lnk
+// Priority order:
+// 1. LNK_HOME environment variable (custom location)
+// 2. XDG_CONFIG_HOME/lnk if XDG_CONFIG_HOME is set
+// 3. ~/.config/lnk (default)
 func GetRepoPath() string {
+	// First, check for LNK_HOME environment variable
+	if lnkHome := os.Getenv("LNK_HOME"); lnkHome != "" {
+		return lnkHome
+	}
+
+	// Fall back to XDG_CONFIG_HOME/lnk or ~/.config/lnk
 	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfig == "" {
 		homeDir, err := os.UserHomeDir()
@@ -113,6 +122,18 @@ func GetRepoPath() string {
 		}
 	}
 	return filepath.Join(xdgConfig, "lnk")
+}
+
+// GetDisplayPath returns a display-friendly path string, replacing home directory with ~
+func GetDisplayPath(path string) string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if strings.HasPrefix(path, homeDir) {
+		return "~" + strings.TrimPrefix(path, homeDir)
+	}
+	return path
 }
 
 // getHostStoragePath returns the storage path for host-specific or common files

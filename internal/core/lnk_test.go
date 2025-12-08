@@ -2206,8 +2206,17 @@ func (suite *CoreTestSuite) TestGetRepoPath() {
 		wantSuffix string
 	}{
 		{
-			name: "with XDG_CONFIG_HOME set",
+			name: "with LNK_HOME set (highest priority)",
 			setupEnv: func() {
+				suite.T().Setenv("LNK_HOME", "/custom/dotfiles")
+				suite.T().Setenv("XDG_CONFIG_HOME", "/xdg/config")
+			},
+			wantSuffix: "/custom/dotfiles",
+		},
+		{
+			name: "with XDG_CONFIG_HOME set (LNK_HOME not set)",
+			setupEnv: func() {
+				suite.T().Setenv("LNK_HOME", "")
 				suite.T().Setenv("XDG_CONFIG_HOME", "/custom/config")
 			},
 			wantSuffix: "/custom/config/lnk",
@@ -2215,6 +2224,7 @@ func (suite *CoreTestSuite) TestGetRepoPath() {
 		{
 			name: "without XDG_CONFIG_HOME defaults to HOME/.config",
 			setupEnv: func() {
+				suite.T().Setenv("LNK_HOME", "")
 				suite.T().Setenv("XDG_CONFIG_HOME", "")
 				suite.T().Setenv("HOME", suite.tempDir)
 			},
@@ -2727,6 +2737,93 @@ func (suite *CoreTestSuite) TestWriteManagedItems() {
 			suite.ElementsMatch(tt.items, items)
 		})
 	}
+}
+
+// TestLNKHomeEnvironmentVariable tests that LNK_HOME takes precedence
+func (suite *CoreTestSuite) TestLNKHomeEnvironmentVariable() {
+	// Create a custom dotfiles directory
+	customDir := filepath.Join(suite.tempDir, "dotfiles")
+	err := os.MkdirAll(customDir, 0755)
+	suite.Require().NoError(err)
+
+	// Set LNK_HOME to the custom directory
+	suite.T().Setenv("LNK_HOME", customDir)
+
+	// Create a new Lnk instance - it should use the custom directory
+	lnk := NewLnk()
+
+	// Initialize the repository
+	err = lnk.Init()
+	suite.Require().NoError(err)
+
+	// Verify the repository was created in the custom directory
+	gitDir := filepath.Join(customDir, ".git")
+	suite.DirExists(gitDir, "Git directory should exist in custom location")
+
+	// Create a test file
+	testFile := filepath.Join(suite.tempDir, ".testrc")
+	err = os.WriteFile(testFile, []byte("test content"), 0644)
+	suite.Require().NoError(err)
+
+	// Add the file using lnk
+	err = lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Verify the file was moved to the custom directory
+	repoFile := filepath.Join(customDir, ".testrc")
+	suite.FileExists(repoFile, "File should be stored in custom location")
+
+	// Verify symlink was created
+	info, err := os.Lstat(testFile)
+	suite.Require().NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink, "Original location should be a symlink")
+
+	// Verify symlink resolves to the custom directory
+	// The symlink target may be relative, so we need to follow it properly
+	target, err := os.Readlink(testFile)
+	suite.Require().NoError(err)
+
+	// Convert relative path to absolute if needed
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(testFile), target)
+	}
+	target, err = filepath.Abs(target)
+	suite.Require().NoError(err)
+
+	// Verify the target path is within the custom directory
+	suite.True(strings.HasPrefix(target, customDir), "Symlink should point to custom directory, got: %s, want prefix: %s", target, customDir)
+}
+
+// TestLNKHomeOverridesXDGConfigHome tests that LNK_HOME takes precedence over XDG_CONFIG_HOME
+func (suite *CoreTestSuite) TestLNKHomeOverridesXDGConfigHome() {
+	// Create directories
+	xdgDir := filepath.Join(suite.tempDir, "xdg-config")
+	lnkHomeDir := filepath.Join(suite.tempDir, "my-dotfiles")
+	err := os.MkdirAll(xdgDir, 0755)
+	suite.Require().NoError(err)
+	err = os.MkdirAll(lnkHomeDir, 0755)
+	suite.Require().NoError(err)
+
+	// Set both environment variables
+	suite.T().Setenv("XDG_CONFIG_HOME", xdgDir)
+	suite.T().Setenv("LNK_HOME", lnkHomeDir)
+
+	// Verify LNK_HOME takes precedence
+	path := GetRepoPath()
+	suite.Equal(lnkHomeDir, path, "LNK_HOME should take precedence over XDG_CONFIG_HOME")
+
+	// Create a new Lnk instance and initialize
+	lnk := NewLnk()
+	err = lnk.Init()
+	suite.Require().NoError(err)
+
+	// Verify repository is in LNK_HOME location
+	gitDir := filepath.Join(lnkHomeDir, ".git")
+	suite.DirExists(gitDir, "Git directory should exist in LNK_HOME location")
+
+	// Verify XDG location was NOT used
+	xdgLnkDir := filepath.Join(xdgDir, "lnk")
+	suite.NoDirExists(xdgLnkDir, "XDG location should not be used when LNK_HOME is set")
 }
 
 func TestCoreSuite(t *testing.T) {
