@@ -23,6 +23,10 @@ func newInitCmd() *cobra.Command {
 			lnk := core.NewLnk()
 			w := GetWriter(cmd)
 
+			// Get the actual repository path for display
+			repoPath := core.GetRepoPath()
+			displayPath := core.GetDisplayPath(repoPath)
+
 			// Show warning when force is used and there are managed files to overwrite
 			if force && remote != "" && lnk.HasUserContent() {
 				w.Writeln(Warning("Using --force flag: This will overwrite existing managed files")).
@@ -45,7 +49,7 @@ func newInitCmd() *cobra.Command {
 					Writeln(Colored(remote, ColorCyan)).
 					WriteString("   ").
 					Write(Message{Text: "Location: ", Emoji: "📁"}).
-					Writeln(Colored("~/.config/lnk", ColorGray))
+					Writeln(Colored(displayPath, ColorGray))
 
 				if err := w.Err(); err != nil {
 					return err
@@ -117,7 +121,7 @@ func newInitCmd() *cobra.Command {
 				w.Writeln(Target("Initialized empty lnk repository")).
 					WriteString("   ").
 					Write(Message{Text: "Location: ", Emoji: "📁"}).
-					Writeln(Colored("~/.config/lnk", ColorGray)).
+					Writeln(Colored(displayPath, ColorGray)).
 					WritelnString("").
 					Writeln(Info("Next steps:")).
 					WriteString("   • Run ").

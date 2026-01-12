@@ -48,6 +48,10 @@ Supports both common configurations, host-specific setups, and bulk operations f
   Automatically runs bootstrap.sh when cloning a repository.
   Use --no-bootstrap to disable.
 
+📁 Custom Location:
+  Set LNK_HOME environment variable to use a custom repository location.
+  Example: LNK_HOME=~/dotfiles lnk init
+
 🎯 Simple, fast, Git-native, and multi-host ready.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,

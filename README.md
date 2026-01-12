@@ -428,11 +428,35 @@ lnk add --dry-run --recursive ~/.config/kitty
 lnk add --host work ~/.gitconfig ~/.ssh/config ~/.npmrc
 ```
 
+### Custom Repository Location
+
+By default, lnk stores your dotfiles in `~/.config/lnk`. You can customize this location using the `LNK_HOME` environment variable:
+
+```bash
+# Use a custom location
+export LNK_HOME=~/dotfiles
+lnk init
+
+# Or set it for a single command
+LNK_HOME=~/dotfiles lnk add ~/.bashrc
+
+# Make it permanent by adding to your shell profile
+echo 'export LNK_HOME=~/dotfiles' >> ~/.bashrc
+```
+
+**Priority order:**
+1. `LNK_HOME` environment variable (highest priority)
+2. `XDG_CONFIG_HOME/lnk` if XDG_CONFIG_HOME is set
+3. `~/.config/lnk` (default)
+
+This is useful if you prefer a more visible location like `~/dotfiles` or want lnk to operate within a subdirectory of an existing repository.
+
 ## Technical bits
 
 - **Single binary** (~8MB, no deps)
 - **Relative symlinks** (portable)
 - **XDG compliant** (`~/.config/lnk`)
+- **Custom location** (via `LNK_HOME` environment variable)
 - **Multihost support** (common + host-specific configs)
 - **Bootstrap support** (automatic environment setup)
 - **Bulk operations** (multiple files, atomic transactions)
@@ -443,13 +467,13 @@ lnk add --host work ~/.gitconfig ~/.ssh/config ~/.npmrc
 
 ## Alternatives
 
-| Tool    | Complexity | Why choose it                                                                             |
-| ------- | ---------- | ----------------------------------------------------------------------------------------- |
-| **lnk** | Minimal    | Just works, no config, Git-native, multihost, bootstrap, bulk ops, dry-run, safety checks |
-| chezmoi | High       | Templates, encryption, cross-platform                                                     |
-| yadm    | Medium     | Git power user, encryption                                                                |
-| dotbot  | Low        | YAML config, basic features                                                               |
-| stow    | Low        | Perl, symlink only                                                                        |
+| Tool    | Complexity | Why choose it                                                                                         |
+| ------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| **lnk** | Minimal    | Just works, no config, Git-native, multihost, bootstrap, bulk ops, dry-run, safety checks, custom loc |
+| chezmoi | High       | Templates, encryption, cross-platform                                                                  |
+| yadm    | Medium     | Git power user, encryption                                                                             |
+| dotbot  | Low        | YAML config, basic features                                                                            |
+| stow    | Low        | Perl, symlink only                                                                                     |
 
 ## Contributing
 
