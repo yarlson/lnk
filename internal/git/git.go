@@ -551,7 +551,7 @@ func (g *Git) Clone(url string) error {
 
 	// Create parent directory
 	parentDir := filepath.Dir(g.repoPath)
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
+	if err := os.MkdirAll(parentDir, 0o755); err != nil {
 		return lnkerr.WithPath(ErrDirCreate, parentDir)
 	}
 
@@ -561,7 +561,8 @@ func (g *Git) Clone(url string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "git", "clone", url, g.repoPath)
+	// Clone the repository and the submodules if exists
+	cmd := exec.CommandContext(ctx, "git", "clone", "--recursive", url, g.repoPath)
 	_, err := cmd.CombinedOutput()
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
