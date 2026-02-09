@@ -46,3 +46,4 @@ desktop.ini
 goreleaser/
 *.md
 !/README.md
+/target/

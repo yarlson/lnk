@@ -300,6 +300,7 @@ lnk list                        # see common config
 lnk list --host $(hostname)     # see host-specific config
 lnk list --all                  # see everything
 lnk status                      # check what changed
+lnk diff                        # see uncommitted changes
 lnk push "new plugins"          # commit & push
 ```
 
@@ -328,6 +329,7 @@ lnk pull                                   # Get updates (work config won't affe
 - `lnk rm [--host HOST] [--force] <files>` - Move files back, remove symlinks
 - `lnk list [--host HOST] [--all]` - List files managed by lnk
 - `lnk status` - Git status + sync info
+- `lnk diff` - Show uncommitted changes
 - `lnk push [msg]` - Stage all, commit, push
 - `lnk pull [--host HOST]` - Pull + restore missing symlinks
 - `lnk bootstrap` - Run bootstrap script manually

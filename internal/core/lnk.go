@@ -655,6 +655,17 @@ func (l *Lnk) Status() (*StatusInfo, error) {
 	}, nil
 }
 
+// Diff returns the diff output for uncommitted changes in the repository.
+// If color is true, the output will include ANSI color codes.
+func (l *Lnk) Diff(color bool) (string, error) {
+	// Check if repository is initialized
+	if !l.git.IsGitRepository() {
+		return "", lnkerr.WithSuggestion(ErrNotInitialized, "run 'lnk init' first")
+	}
+
+	return l.git.Diff(color)
+}
+
 // Push stages all changes and creates a sync commit, then pushes to remote
 func (l *Lnk) Push(message string) error {
 	// Check if repository is initialized

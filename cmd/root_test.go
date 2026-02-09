@@ -1805,6 +1805,62 @@ func (suite *CLITestSuite) TestPushPullWithDifferentBranches() {
 	}
 }
 
+func (suite *CLITestSuite) TestDiffCommand_NotInitialized() {
+	// Test diff without init - should fail
+	err := suite.runCommand("diff")
+	suite.Error(err)
+	suite.Contains(err.Error(), "Lnk repository not initialized")
+}
+
+func (suite *CLITestSuite) TestDiffCommand_NoChanges() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a file so the repo has commits
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Test diff with no uncommitted changes
+	err = suite.runCommand("diff")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "No uncommitted changes")
+	suite.Contains(output, "dotfiles are clean")
+}
+
+func (suite *CLITestSuite) TestDiffCommand_WithChanges() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Modify the managed file (it's now a symlink into the repo)
+	// The symlink points into the lnk repo, so writing to the symlink modifies the repo file
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH\nexport EDITOR=vim"), 0644)
+	suite.Require().NoError(err)
+
+	// Test diff with uncommitted changes
+	err = suite.runCommand("diff")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "EDITOR=vim", "Diff should show the changed content")
+	suite.Contains(output, ".bashrc", "Diff should reference the changed file")
+}
+
 func TestCLISuite(t *testing.T) {
 	suite.Run(t, new(CLITestSuite))
 }

@@ -29,6 +29,7 @@ var (
 	ErrDirRemove      = errors.New("Failed to prepare directory for operation. Please check directory permissions.")
 	ErrDirCreate      = errors.New("Failed to create directory. Please check permissions and available disk space.")
 	ErrUncommitted    = errors.New("Failed to check repository status. Please verify your git repository is valid.")
+	ErrDiff           = errors.New("Failed to get diff output. Please verify your git repository is valid.")
 )
 
 const (
@@ -483,6 +484,27 @@ func (g *Git) HasChanges() (bool, error) {
 	}
 
 	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// Diff returns the diff output for uncommitted changes in the repository.
+// If color is true, the output will include ANSI color codes.
+func (g *Git) Diff(color bool) (string, error) {
+	colorFlag := "--color=never"
+	if color {
+		colorFlag = "--color=always"
+	}
+
+	cmd := g.execGitCommand(shortTimeout, "diff", colorFlag)
+
+	output, err := cmd.Output()
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", lnkerr.Wrap(ErrGitTimeout)
+		}
+		return "", lnkerr.Wrap(ErrDiff)
+	}
+
+	return string(output), nil
 }
 
 // AddAll stages all changes in the repository
