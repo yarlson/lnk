@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/lnk"
 )
 
 func newDoctorCmd() *cobra.Command {
@@ -25,7 +25,7 @@ Use --dry-run to preview what would be fixed without making changes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, _ := cmd.Flags().GetString("host")
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
-			lnk := core.NewLnk(core.WithHost(host))
+			lnk := lnk.NewLnk(lnk.WithHost(host))
 			w := GetWriter(cmd)
 
 			// Handle dry-run mode

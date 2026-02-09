@@ -3,7 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/lnk"
 )
 
 func newPushCmd() *cobra.Command {
@@ -20,7 +20,7 @@ func newPushCmd() *cobra.Command {
 				message = args[0]
 			}
 
-			lnk := core.NewLnk()
+			lnk := lnk.NewLnk()
 			w := GetWriter(cmd)
 
 			if err := lnk.Push(message); err != nil {

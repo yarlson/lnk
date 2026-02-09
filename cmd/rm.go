@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/lnk"
 )
 
 func newRemoveCmd() *cobra.Command {
@@ -24,7 +24,7 @@ Use --force to remove a file from tracking even if the symlink no longer exists
 			filePath := args[0]
 			host, _ := cmd.Flags().GetString("host")
 			force, _ := cmd.Flags().GetBool("force")
-			lnk := core.NewLnk(core.WithHost(host))
+			lnk := lnk.NewLnk(lnk.WithHost(host))
 			w := GetWriter(cmd)
 
 			if force {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/lnk"
 )
 
 func newInitCmd() *cobra.Command {
@@ -20,7 +20,7 @@ func newInitCmd() *cobra.Command {
 			noBootstrap, _ := cmd.Flags().GetBool("no-bootstrap")
 			force, _ := cmd.Flags().GetBool("force")
 
-			lnk := core.NewLnk()
+			lnk := lnk.NewLnk()
 			w := GetWriter(cmd)
 
 			// Show warning when force is used and there are managed files to overwrite

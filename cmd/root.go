@@ -7,8 +7,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-
-	"github.com/yarlson/lnk/internal/lnkerr"
+	error2 "github.com/yarlson/lnk/internal/lnkerror"
 )
 
 var (
@@ -108,7 +107,7 @@ func Execute() {
 func DisplayError(err error) {
 	w := GetErrorWriter()
 
-	var lnkErr *lnkerr.Error
+	var lnkErr *error2.Error
 	if errors.As(err, &lnkErr) {
 		w.Write(Error(lnkErr.Err.Error()))
 		if lnkErr.Path != "" {

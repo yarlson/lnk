@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/lnk"
 )
 
 func newAddCmd() *cobra.Command {
@@ -34,7 +34,7 @@ changes to your system - perfect for verification before bulk operations.`,
 			host, _ := cmd.Flags().GetString("host")
 			recursive, _ := cmd.Flags().GetBool("recursive")
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
-			lnk := core.NewLnk(core.WithHost(host))
+			lnk := lnk.NewLnk(lnk.WithHost(host))
 			w := GetWriter(cmd)
 
 			// Handle dry-run mode

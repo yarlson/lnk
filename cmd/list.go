@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/lnk"
 )
 
 func newListCmd() *cobra.Command {
@@ -42,7 +42,7 @@ func newListCmd() *cobra.Command {
 }
 
 func listCommonConfig(cmd *cobra.Command) error {
-	lnk := core.NewLnk()
+	lnk := lnk.NewLnk()
 	w := GetWriter(cmd)
 
 	managedItems, err := lnk.List()
@@ -81,7 +81,7 @@ func listCommonConfig(cmd *cobra.Command) error {
 }
 
 func listHostConfig(cmd *cobra.Command, host string) error {
-	lnk := core.NewLnk(core.WithHost(host))
+	lnk := lnk.NewLnk(lnk.WithHost(host))
 	w := GetWriter(cmd)
 
 	managedItems, err := lnk.List()
@@ -126,8 +126,8 @@ func listAllConfigs(cmd *cobra.Command) error {
 	w.Writeln(Message{Text: "All configurations managed by lnk", Emoji: "📋", Bold: true}).
 		WritelnString("")
 
-	lnk := core.NewLnk()
-	commonItems, err := lnk.List()
+	lnkApp := lnk.NewLnk()
+	commonItems, err := lnkApp.List()
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func listAllConfigs(cmd *cobra.Command) error {
 		w.WritelnString("").
 			Write(Message{Text: fmt.Sprintf("Host: %s", host), Emoji: "🖥️", Bold: true})
 
-		hostLnk := core.NewLnk(core.WithHost(host))
+		hostLnk := lnk.NewLnk(lnk.WithHost(host))
 		hostItems, err := hostLnk.List()
 		if err != nil {
 			w.WriteString(" ").
@@ -196,7 +196,7 @@ func listAllConfigs(cmd *cobra.Command) error {
 }
 
 func findHostConfigs() ([]string, error) {
-	repoPath := core.GetRepoPath()
+	repoPath := lnk.GetRepoPath()
 
 	// Check if repo exists
 	if _, err := os.Stat(repoPath); os.IsNotExist(err) {

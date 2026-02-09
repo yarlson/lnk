@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/lnk"
 )
 
 func newBootstrapCmd() *cobra.Command {
@@ -16,7 +16,7 @@ func newBootstrapCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			lnk := core.NewLnk()
+			lnk := lnk.NewLnk()
 			w := GetWriter(cmd)
 
 			scriptPath, err := lnk.FindBootstrapScript()

@@ -3,7 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/lnk"
 )
 
 func newDiffCmd() *cobra.Command {
@@ -14,7 +14,7 @@ func newDiffCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			lnk := core.NewLnk()
+			lnk := lnk.NewLnk()
 
 			// Determine color mode based on terminal detection
 			useColor := isTerminal()

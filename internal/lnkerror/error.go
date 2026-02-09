@@ -1,5 +1,5 @@
-// Package lnkerr provides a single error wrapper type for the lnk application.
-package lnkerr
+// Package lnkerror provides a single error wrapper type for the lnk application.
+package lnkerror
 
 // Error wraps a sentinel error with optional context for display.
 // This is the only custom error type in the codebase.

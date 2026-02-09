@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yarlson/lnk/internal/lnkerr"
+	error2 "github.com/yarlson/lnk/internal/lnkerror"
 )
 
 func TestOutputConfig(t *testing.T) {
@@ -210,14 +210,14 @@ func TestPredefinedMessages(t *testing.T) {
 func TestStructuredErrors(t *testing.T) {
 	tests := []struct {
 		name        string
-		err         *lnkerr.Error
+		err         *error2.Error
 		config      OutputConfig
 		contains    []string
 		notContains []string
 	}{
 		{
 			name: "structured error with full formatting",
-			err: &lnkerr.Error{
+			err: &error2.Error{
 				Err:        errors.New("something went wrong"),
 				Path:       "/some/path",
 				Suggestion: "try this instead",
@@ -227,7 +227,7 @@ func TestStructuredErrors(t *testing.T) {
 		},
 		{
 			name: "structured error without emojis",
-			err: &lnkerr.Error{
+			err: &error2.Error{
 				Err:        errors.New("something went wrong"),
 				Path:       "/some/path",
 				Suggestion: "try this instead",

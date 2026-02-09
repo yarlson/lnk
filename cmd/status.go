@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/yarlson/lnk/internal/core"
+	"github.com/yarlson/lnk/internal/lnk"
 )
 
 func newStatusCmd() *cobra.Command {
@@ -16,7 +16,7 @@ func newStatusCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			lnk := core.NewLnk()
+			lnk := lnk.NewLnk()
 			status, err := lnk.Status()
 			if err != nil {
 				return err
@@ -38,7 +38,7 @@ func newStatusCmd() *cobra.Command {
 	}
 }
 
-func displayDirtyStatus(cmd *cobra.Command, status *core.StatusInfo) {
+func displayDirtyStatus(cmd *cobra.Command, status *lnk.StatusInfo) {
 	w := GetWriter(cmd)
 
 	w.Writeln(Warning("Repository has uncommitted changes")).
@@ -70,7 +70,7 @@ func displayDirtyStatus(cmd *cobra.Command, status *core.StatusInfo) {
 		WritelnString(" to commit changes")
 }
 
-func displayUpToDateStatus(cmd *cobra.Command, status *core.StatusInfo) {
+func displayUpToDateStatus(cmd *cobra.Command, status *lnk.StatusInfo) {
 	w := GetWriter(cmd)
 
 	w.Writeln(Success("Repository is up to date")).
@@ -79,7 +79,7 @@ func displayUpToDateStatus(cmd *cobra.Command, status *core.StatusInfo) {
 		Writeln(Colored(status.Remote, ColorCyan))
 }
 
-func displaySyncStatus(cmd *cobra.Command, status *core.StatusInfo) {
+func displaySyncStatus(cmd *cobra.Command, status *lnk.StatusInfo) {
 	w := GetWriter(cmd)
 
 	w.Writeln(Message{Text: "Repository Status", Emoji: "📊", Bold: true}).
@@ -103,7 +103,7 @@ func displaySyncStatus(cmd *cobra.Command, status *core.StatusInfo) {
 	}
 }
 
-func displayAheadBehindInfo(cmd *cobra.Command, status *core.StatusInfo, isDirty bool) {
+func displayAheadBehindInfo(cmd *cobra.Command, status *lnk.StatusInfo, isDirty bool) {
 	w := GetWriter(cmd)
 
 	if status.Ahead > 0 {
