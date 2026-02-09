@@ -666,6 +666,399 @@ func (l *Lnk) Diff(color bool) (string, error) {
 	return l.git.Diff(color)
 }
 
+// DoctorResult contains the results of a doctor scan or execution.
+type DoctorResult struct {
+	// InvalidEntries are .lnk entries whose stored files no longer exist in the repo.
+	InvalidEntries []string
+	// BrokenSymlinks are managed entries whose symlinks at $HOME are broken or missing.
+	BrokenSymlinks []string
+	// OrphanedFiles are files in repo storage that are not tracked in .lnk.
+	OrphanedFiles []string
+}
+
+// HasIssues returns true if any issues were found.
+func (r *DoctorResult) HasIssues() bool {
+	return len(r.InvalidEntries) > 0 || len(r.BrokenSymlinks) > 0 || len(r.OrphanedFiles) > 0
+}
+
+// TotalIssues returns the total number of issues found.
+func (r *DoctorResult) TotalIssues() int {
+	return len(r.InvalidEntries) + len(r.BrokenSymlinks) + len(r.OrphanedFiles)
+}
+
+// PreviewDoctor scans the repository for all types of issues WITHOUT making
+// any changes. This is the read-only preview used by --dry-run.
+// It checks for: invalid .lnk entries, broken symlinks, and orphaned files.
+func (l *Lnk) PreviewDoctor() (*DoctorResult, error) {
+	// Check if repository is initialized
+	if !l.git.IsGitRepository() {
+		return nil, lnkerr.WithSuggestion(ErrNotInitialized, "run 'lnk init' first")
+	}
+
+	result := &DoctorResult{}
+
+	// 1. Find invalid entries (tracked in .lnk but missing from repo storage)
+	invalidEntries, err := l.findInvalidEntries()
+	if err != nil {
+		return nil, err
+	}
+	result.InvalidEntries = invalidEntries
+
+	// 2. Find broken symlinks (tracked in .lnk, file exists in repo, but symlink is broken)
+	brokenSymlinks, err := l.findBrokenSymlinks()
+	if err != nil {
+		return nil, err
+	}
+	result.BrokenSymlinks = brokenSymlinks
+
+	// 3. Find orphaned files (in repo storage but not tracked in .lnk)
+	orphanedFiles, err := l.findOrphanedFiles()
+	if err != nil {
+		return nil, err
+	}
+	result.OrphanedFiles = orphanedFiles
+
+	return result, nil
+}
+
+// Doctor scans the repository for all types of issues and fixes them.
+// It removes invalid entries, restores broken symlinks, and removes orphaned files.
+func (l *Lnk) Doctor() (*DoctorResult, error) {
+	// Use PreviewDoctor for the scan phase
+	result, err := l.PreviewDoctor()
+	if err != nil {
+		return nil, err
+	}
+
+	// If nothing to fix, return early
+	if !result.HasIssues() {
+		return result, nil
+	}
+
+	// 1. Fix broken symlinks (restore them via RestoreSymlinks)
+	if len(result.BrokenSymlinks) > 0 {
+		if _, err := l.RestoreSymlinks(); err != nil {
+			return nil, fmt.Errorf("failed to restore symlinks: %w", err)
+		}
+	}
+
+	// Track whether we need a git commit (for repo-mutating operations)
+	needsCommit := false
+
+	// 2. Remove invalid entries from .lnk file
+	if len(result.InvalidEntries) > 0 {
+		managedItems, err := l.getManagedItems()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get managed items: %w", err)
+		}
+
+		removedSet := make(map[string]bool, len(result.InvalidEntries))
+		for _, item := range result.InvalidEntries {
+			removedSet[item] = true
+		}
+
+		var validItems []string
+		for _, item := range managedItems {
+			if !removedSet[item] {
+				validItems = append(validItems, item)
+			}
+		}
+
+		if err := l.writeManagedItems(validItems); err != nil {
+			return nil, fmt.Errorf("failed to update tracking file: %w", err)
+		}
+
+		if err := l.git.Add(l.getLnkFileName()); err != nil {
+			return nil, err
+		}
+		needsCommit = true
+	}
+
+	// 3. Remove orphaned files from repo storage
+	if len(result.OrphanedFiles) > 0 {
+		if err := l.removeOrphanedFiles(result.OrphanedFiles); err != nil {
+			return nil, fmt.Errorf("failed to remove orphaned files: %w", err)
+		}
+		needsCommit = true
+	}
+
+	// Create a single git commit for all mutations
+	if needsCommit {
+		commitMsg := l.buildDoctorCommitMessage(result)
+		if err := l.git.Commit(commitMsg); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
+}
+
+// findInvalidEntries returns .lnk entries whose stored files no longer exist in the repo.
+func (l *Lnk) findInvalidEntries() ([]string, error) {
+	managedItems, err := l.getManagedItems()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get managed items: %w", err)
+	}
+
+	if len(managedItems) == 0 {
+		return []string{}, nil
+	}
+
+	storagePath := l.getHostStoragePath()
+	var invalidItems []string
+
+	for _, relativePath := range managedItems {
+		// Security: validate the path doesn't escape the storage directory
+		cleaned := filepath.Clean(relativePath)
+		if strings.HasPrefix(cleaned, "..") || filepath.IsAbs(cleaned) {
+			// Path traversal attempt or absolute path — treat as invalid
+			invalidItems = append(invalidItems, relativePath)
+			continue
+		}
+
+		// Check if the stored file exists in the repository
+		storedFile := filepath.Join(storagePath, cleaned)
+		if _, err := os.Stat(storedFile); os.IsNotExist(err) {
+			// File no longer exists in repo — invalid entry
+			invalidItems = append(invalidItems, relativePath)
+			continue
+		}
+	}
+
+	return invalidItems, nil
+}
+
+// findBrokenSymlinks returns managed entries whose symlinks at $HOME are broken or missing.
+// Only checks entries that have valid stored files in the repo (not invalid entries).
+func (l *Lnk) findBrokenSymlinks() ([]string, error) {
+	managedItems, err := l.getManagedItems()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get managed items: %w", err)
+	}
+
+	if len(managedItems) == 0 {
+		return []string{}, nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	storagePath := l.getHostStoragePath()
+	var brokenSymlinks []string
+
+	for _, relativePath := range managedItems {
+		// Skip invalid paths (path traversal, etc.)
+		cleaned := filepath.Clean(relativePath)
+		if strings.HasPrefix(cleaned, "..") || filepath.IsAbs(cleaned) {
+			continue
+		}
+
+		// Only check entries whose repo file exists (otherwise it's an invalid entry, not a broken symlink)
+		repoItem := filepath.Join(storagePath, cleaned)
+		if _, err := os.Stat(repoItem); os.IsNotExist(err) {
+			continue
+		}
+
+		// Check if the symlink at $HOME is valid
+		symlinkPath := filepath.Join(homeDir, relativePath)
+		if !l.isValidSymlink(symlinkPath, repoItem) {
+			brokenSymlinks = append(brokenSymlinks, relativePath)
+		}
+	}
+
+	return brokenSymlinks, nil
+}
+
+// findOrphanedFiles returns files in the repo storage directory that are not tracked in .lnk.
+func (l *Lnk) findOrphanedFiles() ([]string, error) {
+	managedItems, err := l.getManagedItems()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get managed items: %w", err)
+	}
+
+	storagePath := l.getHostStoragePath()
+
+	// Build a set of tracked paths for fast lookup
+	trackedSet := make(map[string]bool, len(managedItems))
+	for _, item := range managedItems {
+		trackedSet[filepath.Clean(item)] = true
+	}
+
+	// Also build a set of tracked parent directories so we don't flag
+	// intermediate directories that only exist to hold tracked files
+	trackedParents := make(map[string]bool)
+	for _, item := range managedItems {
+		dir := filepath.Dir(filepath.Clean(item))
+		for dir != "." && dir != "/" {
+			trackedParents[dir] = true
+			dir = filepath.Dir(dir)
+		}
+	}
+
+	var orphanedFiles []string
+
+	// Walk the storage directory
+	err = filepath.Walk(storagePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip paths we can't access
+		}
+
+		// Get the path relative to the storage directory
+		relPath, err := filepath.Rel(storagePath, path)
+		if err != nil {
+			return nil
+		}
+
+		// Skip the root directory itself
+		if relPath == "." {
+			return nil
+		}
+
+		// Skip infrastructure files and directories
+		if l.isInfrastructurePath(relPath) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// If this is a directory, skip it if it's a tracked parent or
+		// contains tracked content (we'll handle files individually)
+		if info.IsDir() {
+			if trackedParents[relPath] || trackedSet[relPath] {
+				return nil // walk into it
+			}
+			// Check if any tracked path is under this directory
+			for tracked := range trackedSet {
+				if strings.HasPrefix(tracked, relPath+"/") {
+					return nil // walk into it, contains tracked content
+				}
+			}
+			// Entire directory is orphaned — add it and skip contents
+			orphanedFiles = append(orphanedFiles, relPath)
+			return filepath.SkipDir
+		}
+
+		// Regular file: check if it's tracked
+		if !trackedSet[relPath] {
+			orphanedFiles = append(orphanedFiles, relPath)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk storage directory: %w", err)
+	}
+
+	sort.Strings(orphanedFiles)
+	return orphanedFiles, nil
+}
+
+// isInfrastructurePath returns true if the given relative path (from the storage root)
+// is an infrastructure file/directory that should not be treated as an orphan.
+func (l *Lnk) isInfrastructurePath(relPath string) bool {
+	// Get the top-level component of the path
+	topLevel := relPath
+	if idx := strings.IndexByte(relPath, filepath.Separator); idx != -1 {
+		topLevel = relPath[:idx]
+	}
+
+	// .git directory
+	if topLevel == ".git" {
+		return true
+	}
+
+	// .lnk tracking file (common)
+	if relPath == ".lnk" {
+		return true
+	}
+
+	// .lnk.* tracking files (host-specific)
+	if strings.HasPrefix(relPath, ".lnk.") && !strings.Contains(relPath[5:], string(filepath.Separator)) {
+		return true
+	}
+
+	// bootstrap.sh
+	if relPath == "bootstrap.sh" {
+		return true
+	}
+
+	// For common configuration (no host): *.lnk directories are host storage
+	if l.host == "" {
+		if strings.HasSuffix(topLevel, ".lnk") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// removeOrphanedFiles deletes orphaned files from the repo storage and stages the removals.
+func (l *Lnk) removeOrphanedFiles(orphans []string) error {
+	storagePath := l.getHostStoragePath()
+
+	for _, relPath := range orphans {
+		// Security: validate the path is under the storage directory
+		cleaned := filepath.Clean(relPath)
+		if strings.HasPrefix(cleaned, "..") || filepath.IsAbs(cleaned) {
+			continue // Skip suspicious paths
+		}
+
+		fullPath := filepath.Join(storagePath, cleaned)
+
+		// Defense in depth: verify the resolved path is under storagePath
+		absFullPath, err := filepath.Abs(fullPath)
+		if err != nil {
+			continue
+		}
+		absStoragePath, err := filepath.Abs(storagePath)
+		if err != nil {
+			continue
+		}
+		if !strings.HasPrefix(absFullPath, absStoragePath+string(filepath.Separator)) {
+			continue
+		}
+
+		// Remove the file or directory
+		if err := os.RemoveAll(fullPath); err != nil {
+			return fmt.Errorf("failed to remove orphaned file %s: %w", relPath, err)
+		}
+	}
+
+	// Stage all deletions at once
+	if err := l.git.AddAll(); err != nil {
+		return fmt.Errorf("failed to stage orphan removals: %w", err)
+	}
+
+	return nil
+}
+
+// buildDoctorCommitMessage creates a commit message summarizing all doctor actions.
+func (l *Lnk) buildDoctorCommitMessage(result *DoctorResult) string {
+	var parts []string
+
+	if len(result.InvalidEntries) > 0 {
+		word := "entries"
+		if len(result.InvalidEntries) == 1 {
+			word = "entry"
+		}
+		parts = append(parts, fmt.Sprintf("%d invalid %s", len(result.InvalidEntries), word))
+	}
+
+	if len(result.OrphanedFiles) > 0 {
+		word := "files"
+		if len(result.OrphanedFiles) == 1 {
+			word = "file"
+		}
+		parts = append(parts, fmt.Sprintf("%d orphaned %s", len(result.OrphanedFiles), word))
+	}
+
+	return fmt.Sprintf("lnk: cleaned %s", strings.Join(parts, " and "))
+}
+
 // Push stages all changes and creates a sync commit, then pushes to remote
 func (l *Lnk) Push(message string) error {
 	// Check if repository is initialized

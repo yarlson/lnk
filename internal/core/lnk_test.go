@@ -2729,6 +2729,587 @@ func (suite *CoreTestSuite) TestWriteManagedItems() {
 	}
 }
 
+// Test Doctor with no issues
+func (suite *CoreTestSuite) TestDoctorNoInvalidEntries() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a real file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Run doctor — nothing should be invalid
+	result, err := suite.lnk.Doctor()
+	suite.Require().NoError(err)
+	suite.False(result.HasIssues())
+	suite.Empty(result.InvalidEntries)
+	suite.Empty(result.BrokenSymlinks)
+	suite.Empty(result.OrphanedFiles)
+}
+
+// Test Doctor removes entries for missing repo files
+func (suite *CoreTestSuite) TestDoctorRemovesInvalidEntries() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a real file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Add a second file so we can make it invalid
+	testFile2 := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile2, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile2)
+	suite.Require().NoError(err)
+
+	// Now manually delete .vimrc from the repo (simulate file disappearing)
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	repoVimrc := filepath.Join(lnkDir, ".vimrc")
+	err = os.Remove(repoVimrc)
+	suite.Require().NoError(err)
+
+	// Run doctor — should remove .vimrc from tracking
+	result, err := suite.lnk.Doctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{".vimrc"}, result.InvalidEntries)
+
+	// Verify .lnk file only contains .bashrc
+	items, err := suite.lnk.getManagedItems()
+	suite.Require().NoError(err)
+	suite.Equal([]string{".bashrc"}, items)
+
+	// Verify a git commit was created with doctor message
+	commits, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+	suite.Contains(commits[0], "lnk: cleaned 1 invalid entry")
+}
+
+// Test Doctor with path traversal entries
+func (suite *CoreTestSuite) TestDoctorRemovesPathTraversalEntries() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Manually write .lnk file with a path traversal entry
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	err = os.WriteFile(lnkFile, []byte("../../etc/passwd\n"), 0644)
+	suite.Require().NoError(err)
+
+	// Stage the .lnk file
+	cmd := exec.Command("git", "add", ".lnk")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "add .lnk")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Run doctor — should remove the traversal entry
+	result, err := suite.lnk.Doctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{"../../etc/passwd"}, result.InvalidEntries)
+
+	// Verify .lnk file is now empty
+	items, err := suite.lnk.getManagedItems()
+	suite.Require().NoError(err)
+	suite.Empty(items)
+}
+
+// Test Doctor on uninitialized repo
+func (suite *CoreTestSuite) TestDoctorNotInitialized() {
+	result, err := suite.lnk.Doctor()
+	suite.Error(err)
+	suite.Nil(result)
+	suite.Contains(err.Error(), "Lnk repository not initialized")
+}
+
+// Test Doctor with empty .lnk file
+func (suite *CoreTestSuite) TestDoctorEmptyLnkFile() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Run doctor on empty tracking
+	result, err := suite.lnk.Doctor()
+	suite.Require().NoError(err)
+	suite.False(result.HasIssues())
+}
+
+// Test Doctor detects and fixes broken symlinks
+func (suite *CoreTestSuite) TestDoctorFixesBrokenSymlinks() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Remove the symlink to simulate a broken symlink scenario
+	err = os.Remove(testFile)
+	suite.Require().NoError(err)
+
+	// Run doctor — should detect and fix the broken symlink
+	result, err := suite.lnk.Doctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{".bashrc"}, result.BrokenSymlinks)
+	suite.Empty(result.InvalidEntries)
+	suite.Empty(result.OrphanedFiles)
+
+	// Verify the symlink was restored
+	info, err := os.Lstat(testFile)
+	suite.Require().NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+}
+
+// Test Doctor detects and removes orphaned files
+func (suite *CoreTestSuite) TestDoctorRemovesOrphanedFiles() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a real file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Create an orphan file in the repo (not tracked in .lnk)
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	orphanFile := filepath.Join(lnkDir, "orphan.txt")
+	err = os.WriteFile(orphanFile, []byte("orphaned content"), 0644)
+	suite.Require().NoError(err)
+
+	// Stage the orphan so git knows about it
+	gitCmd := exec.Command("git", "add", "orphan.txt")
+	gitCmd.Dir = lnkDir
+	err = gitCmd.Run()
+	suite.Require().NoError(err)
+	gitCmd = exec.Command("git", "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "add orphan")
+	gitCmd.Dir = lnkDir
+	err = gitCmd.Run()
+	suite.Require().NoError(err)
+
+	// Run doctor — should detect and remove the orphan
+	result, err := suite.lnk.Doctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{"orphan.txt"}, result.OrphanedFiles)
+	suite.Empty(result.InvalidEntries)
+	suite.Empty(result.BrokenSymlinks)
+
+	// Verify the orphan was deleted
+	_, err = os.Stat(orphanFile)
+	suite.True(os.IsNotExist(err))
+}
+
+// Test Doctor does not remove infrastructure files
+func (suite *CoreTestSuite) TestDoctorDoesNotRemoveInfrastructure() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a real file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Create bootstrap.sh in the repo (should be excluded)
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	bootstrapFile := filepath.Join(lnkDir, "bootstrap.sh")
+	err = os.WriteFile(bootstrapFile, []byte("#!/bin/bash\necho hello"), 0755)
+	suite.Require().NoError(err)
+
+	// Run doctor — bootstrap.sh should NOT appear as orphan
+	result, err := suite.lnk.Doctor()
+	suite.Require().NoError(err)
+	suite.Empty(result.OrphanedFiles, "bootstrap.sh should not be treated as orphaned")
+
+	// Verify bootstrap.sh still exists
+	suite.FileExists(bootstrapFile)
+}
+
+// Test Doctor handles combined issues
+func (suite *CoreTestSuite) TestDoctorCombinedIssues() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add two files
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	testFile2 := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile2, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile2)
+	suite.Require().NoError(err)
+
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+
+	// 1. Create an invalid entry: delete .vimrc from repo
+	repoVimrc := filepath.Join(lnkDir, ".vimrc")
+	err = os.Remove(repoVimrc)
+	suite.Require().NoError(err)
+
+	// 2. Create a broken symlink: remove .bashrc symlink
+	err = os.Remove(testFile)
+	suite.Require().NoError(err)
+
+	// 3. Create an orphan file
+	orphanFile := filepath.Join(lnkDir, "orphan.txt")
+	err = os.WriteFile(orphanFile, []byte("orphaned"), 0644)
+	suite.Require().NoError(err)
+	gitCmd := exec.Command("git", "add", "orphan.txt")
+	gitCmd.Dir = lnkDir
+	err = gitCmd.Run()
+	suite.Require().NoError(err)
+	gitCmd = exec.Command("git", "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "add orphan")
+	gitCmd.Dir = lnkDir
+	err = gitCmd.Run()
+	suite.Require().NoError(err)
+
+	// Run doctor
+	result, err := suite.lnk.Doctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{".vimrc"}, result.InvalidEntries)
+	suite.Equal([]string{".bashrc"}, result.BrokenSymlinks)
+	suite.Equal([]string{"orphan.txt"}, result.OrphanedFiles)
+	suite.Equal(3, result.TotalIssues())
+}
+
+// Test Doctor with orphaned files in host-specific config
+func (suite *CoreTestSuite) TestDoctorOrphanedFilesWithHost() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	hostLnk := NewLnk(WithHost("work"))
+
+	// Add a host-specific file
+	testFile := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+	err = hostLnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Create an orphan in host storage
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	hostStorageDir := filepath.Join(lnkDir, "work.lnk")
+	orphanFile := filepath.Join(hostStorageDir, "orphan.txt")
+	err = os.WriteFile(orphanFile, []byte("orphaned"), 0644)
+	suite.Require().NoError(err)
+
+	// Stage the orphan
+	gitCmd := exec.Command("git", "add", filepath.Join("work.lnk", "orphan.txt"))
+	gitCmd.Dir = lnkDir
+	err = gitCmd.Run()
+	suite.Require().NoError(err)
+	gitCmd = exec.Command("git", "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "add orphan")
+	gitCmd.Dir = lnkDir
+	err = gitCmd.Run()
+	suite.Require().NoError(err)
+
+	// Run doctor with host
+	result, err := hostLnk.Doctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{"orphan.txt"}, result.OrphanedFiles)
+
+	// Verify orphan was deleted
+	_, err = os.Stat(orphanFile)
+	suite.True(os.IsNotExist(err))
+}
+
+// Test PreviewDoctor with no issues
+func (suite *CoreTestSuite) TestPreviewDoctorNoInvalidEntries() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a real file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Preview doctor — nothing should be invalid
+	result, err := suite.lnk.PreviewDoctor()
+	suite.Require().NoError(err)
+	suite.False(result.HasIssues())
+}
+
+// Test PreviewDoctor returns invalid entries without modifying state
+func (suite *CoreTestSuite) TestPreviewDoctorReturnsInvalidEntries() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add two files
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	testFile2 := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile2, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile2)
+	suite.Require().NoError(err)
+
+	// Delete .vimrc from the repo to create an invalid entry
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	repoVimrc := filepath.Join(lnkDir, ".vimrc")
+	err = os.Remove(repoVimrc)
+	suite.Require().NoError(err)
+
+	// Get commit count before preview
+	commitsBefore, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+
+	// Preview doctor — should report .vimrc as invalid
+	result, err := suite.lnk.PreviewDoctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{".vimrc"}, result.InvalidEntries)
+
+	// Verify NO mutation: .lnk file still contains both entries
+	items, err := suite.lnk.getManagedItems()
+	suite.Require().NoError(err)
+	suite.Equal([]string{".bashrc", ".vimrc"}, items)
+
+	// Verify NO git commit was created
+	commitsAfter, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+	suite.Equal(len(commitsBefore), len(commitsAfter))
+}
+
+// Test PreviewDoctor with path traversal entries
+func (suite *CoreTestSuite) TestPreviewDoctorPathTraversalEntries() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Manually write .lnk file with a path traversal entry
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	err = os.WriteFile(lnkFile, []byte("../../etc/passwd\n"), 0644)
+	suite.Require().NoError(err)
+
+	// Stage the .lnk file
+	cmd := exec.Command("git", "add", ".lnk")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	cmd = exec.Command("git", "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "add .lnk")
+	cmd.Dir = lnkDir
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	// Preview doctor — should detect the traversal entry
+	result, err := suite.lnk.PreviewDoctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{"../../etc/passwd"}, result.InvalidEntries)
+
+	// Verify NO mutation: .lnk file still contains the traversal entry
+	items, err := suite.lnk.getManagedItems()
+	suite.Require().NoError(err)
+	suite.Equal([]string{"../../etc/passwd"}, items)
+}
+
+// Test PreviewDoctor on uninitialized repo
+func (suite *CoreTestSuite) TestPreviewDoctorNotInitialized() {
+	result, err := suite.lnk.PreviewDoctor()
+	suite.Error(err)
+	suite.Nil(result)
+	suite.Contains(err.Error(), "Lnk repository not initialized")
+}
+
+// Test PreviewDoctor with empty .lnk file
+func (suite *CoreTestSuite) TestPreviewDoctorEmptyLnkFile() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Preview doctor on empty tracking
+	result, err := suite.lnk.PreviewDoctor()
+	suite.Require().NoError(err)
+	suite.False(result.HasIssues())
+}
+
+// Test PreviewDoctor with host-specific configuration
+func (suite *CoreTestSuite) TestPreviewDoctorWithHost() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a host-specific file
+	hostLnk := NewLnk(WithHost("work"))
+
+	testFile := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+	err = hostLnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Delete from host storage to create invalid entry
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	hostStoredFile := filepath.Join(lnkDir, "work.lnk", ".vimrc")
+	err = os.Remove(hostStoredFile)
+	suite.Require().NoError(err)
+
+	// Preview doctor with host — should detect the invalid entry
+	result, err := hostLnk.PreviewDoctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{".vimrc"}, result.InvalidEntries)
+
+	// Verify NO mutation: .lnk.work file still contains the entry
+	items, err := hostLnk.getManagedItems()
+	suite.Require().NoError(err)
+	suite.Equal([]string{".vimrc"}, items)
+}
+
+// Test PreviewDoctor detects broken symlinks
+func (suite *CoreTestSuite) TestPreviewDoctorDetectsBrokenSymlinks() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Remove the symlink to simulate a broken symlink
+	err = os.Remove(testFile)
+	suite.Require().NoError(err)
+
+	// Get commit count before preview
+	commitsBefore, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+
+	// Preview doctor — should detect the broken symlink
+	result, err := suite.lnk.PreviewDoctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{".bashrc"}, result.BrokenSymlinks)
+	suite.Empty(result.InvalidEntries)
+
+	// Verify NO mutation: symlink was not restored
+	_, err = os.Lstat(testFile)
+	suite.True(os.IsNotExist(err))
+
+	// Verify NO git commit was created
+	commitsAfter, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+	suite.Equal(len(commitsBefore), len(commitsAfter))
+}
+
+// Test PreviewDoctor detects orphaned files
+func (suite *CoreTestSuite) TestPreviewDoctorDetectsOrphanedFiles() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	// Create orphan file
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+	orphanFile := filepath.Join(lnkDir, "orphan.txt")
+	err = os.WriteFile(orphanFile, []byte("orphaned"), 0644)
+	suite.Require().NoError(err)
+
+	// Get commit count before preview
+	commitsBefore, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+
+	// Preview doctor — should detect orphan
+	result, err := suite.lnk.PreviewDoctor()
+	suite.Require().NoError(err)
+	suite.Equal([]string{"orphan.txt"}, result.OrphanedFiles)
+
+	// Verify NO mutation: orphan still exists
+	suite.FileExists(orphanFile)
+
+	// Verify NO git commit was created
+	commitsAfter, err := suite.lnk.GetCommits()
+	suite.Require().NoError(err)
+	suite.Equal(len(commitsBefore), len(commitsAfter))
+}
+
+// Test infrastructure files are excluded from orphan detection
+func (suite *CoreTestSuite) TestDoctorExcludesInfrastructureFiles() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a real file so there's something tracked
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+
+	// Create bootstrap.sh
+	err = os.WriteFile(filepath.Join(lnkDir, "bootstrap.sh"), []byte("#!/bin/bash"), 0755)
+	suite.Require().NoError(err)
+
+	// Create a host storage directory (should be excluded for common config)
+	hostDir := filepath.Join(lnkDir, "myhost.lnk")
+	err = os.MkdirAll(hostDir, 0755)
+	suite.Require().NoError(err)
+	err = os.WriteFile(filepath.Join(hostDir, "somefile"), []byte("content"), 0644)
+	suite.Require().NoError(err)
+
+	// Preview doctor — none of these should be orphans
+	result, err := suite.lnk.PreviewDoctor()
+	suite.Require().NoError(err)
+	suite.Empty(result.OrphanedFiles, "Infrastructure files should not be detected as orphans")
+}
+
+// Test orphan detection with nested orphan directory
+func (suite *CoreTestSuite) TestDoctorOrphanedDirectory() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Add a real file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.lnk.Add(testFile)
+	suite.Require().NoError(err)
+
+	lnkDir := filepath.Join(suite.tempDir, "lnk")
+
+	// Create an orphan directory with files
+	orphanDir := filepath.Join(lnkDir, "orphandir")
+	err = os.MkdirAll(orphanDir, 0755)
+	suite.Require().NoError(err)
+	err = os.WriteFile(filepath.Join(orphanDir, "file1.txt"), []byte("content"), 0644)
+	suite.Require().NoError(err)
+
+	// Preview doctor — should detect the orphaned directory
+	result, err := suite.lnk.PreviewDoctor()
+	suite.Require().NoError(err)
+	suite.Contains(result.OrphanedFiles, "orphandir")
+}
+
 func TestCoreSuite(t *testing.T) {
 	suite.Run(t, new(CoreTestSuite))
 }

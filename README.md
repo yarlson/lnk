@@ -14,6 +14,7 @@ lnk add ~/.vimrc ~/.bashrc ~/.gitconfig         # Multiple files at once
 lnk add --recursive ~/.config/nvim              # Process directory contents
 lnk add --dry-run ~/.tmux.conf                  # Preview changes first
 lnk add --host work ~/.ssh/config               # Host-specific config
+lnk doctor --dry-run                          # Check repo health
 lnk push "setup"
 ```
 
@@ -301,6 +302,8 @@ lnk list --host $(hostname)     # see host-specific config
 lnk list --all                  # see everything
 lnk status                      # check what changed
 lnk diff                        # see uncommitted changes
+lnk doctor --dry-run            # check for health issues
+lnk doctor                      # fix any issues found
 lnk push "new plugins"          # commit & push
 ```
 
@@ -332,6 +335,7 @@ lnk pull                                   # Get updates (work config won't affe
 - `lnk diff` - Show uncommitted changes
 - `lnk push [msg]` - Stage all, commit, push
 - `lnk pull [--host HOST]` - Pull + restore missing symlinks
+- `lnk doctor [--host HOST] [--dry-run]` - Diagnose and fix repository health issues
 - `lnk bootstrap` - Run bootstrap script manually
 
 ### Command Options
@@ -344,6 +348,26 @@ lnk pull                                   # Get updates (work config won't affe
 - `--no-bootstrap` - Skip automatic execution of bootstrap script after cloning
 - `--force` - Force initialization even if directory contains managed files (WARNING: overwrites existing content)
 - `--force, -f` (rm) - Remove from tracking even if symlink is missing (useful if you accidentally deleted a managed file)
+
+### Repository Health
+
+```bash
+# Preview issues without making changes
+lnk doctor --dry-run
+
+# Fix all detected issues
+lnk doctor
+
+# Check a specific host configuration
+lnk doctor --host laptop
+lnk doctor --host laptop --dry-run
+```
+
+The `doctor` command scans for three categories of issues:
+
+- **Invalid entries**: files listed in `.lnk` but missing from repo storage
+- **Broken symlinks**: managed files whose symlinks at `$HOME` are missing or point to the wrong location
+- **Orphaned files**: files in repo storage not tracked in `.lnk`
 
 ### Output Formatting
 
@@ -440,18 +464,19 @@ lnk add --host work ~/.gitconfig ~/.ssh/config ~/.npmrc
 - **Bulk operations** (multiple files, atomic transactions)
 - **Recursive processing** (directory contents individually)
 - **Preview mode** (dry-run for safety)
+- **Repository health checks** (diagnose and fix issues with `doctor`)
 - **Data loss prevention** (safety checks with contextual warnings)
 - **Git-native** (standard Git repo, no special formats)
 
 ## Alternatives
 
-| Tool    | Complexity | Why choose it                                                                             |
-| ------- | ---------- | ----------------------------------------------------------------------------------------- |
-| **lnk** | Minimal    | Just works, no config, Git-native, multihost, bootstrap, bulk ops, dry-run, safety checks |
-| chezmoi | High       | Templates, encryption, cross-platform                                                     |
-| yadm    | Medium     | Git power user, encryption                                                                |
-| dotbot  | Low        | YAML config, basic features                                                               |
-| stow    | Low        | Perl, symlink only                                                                        |
+| Tool    | Complexity | Why choose it                                                                                     |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------- |
+| **lnk** | Minimal    | Just works, no config, Git-native, multihost, bootstrap, bulk ops, dry-run, doctor, safety checks |
+| chezmoi | High       | Templates, encryption, cross-platform                                                             |
+| yadm    | Medium     | Git power user, encryption                                                                        |
+| dotbot  | Low        | YAML config, basic features                                                                       |
+| stow    | Low        | Perl, symlink only                                                                                |
 
 ## Contributing
 

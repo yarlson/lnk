@@ -1861,6 +1861,428 @@ func (suite *CLITestSuite) TestDiffCommand_WithChanges() {
 	suite.Contains(output, ".bashrc", "Diff should reference the changed file")
 }
 
+func (suite *CLITestSuite) TestDoctorCommand_NotInitialized() {
+	err := suite.runCommand("doctor")
+	suite.Error(err)
+	suite.Contains(err.Error(), "Lnk repository not initialized")
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_AllValid() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Run doctor — everything should be healthy
+	err = suite.runCommand("doctor")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Repository is healthy")
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_RemovesInvalidEntries() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a second file, then delete it from the repo to create an invalid entry
+	testFile2 := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile2, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile2)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Delete the stored file from repo (simulating manual deletion / corruption)
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	repoVimrc := filepath.Join(lnkDir, ".vimrc")
+	err = os.Remove(repoVimrc)
+	suite.Require().NoError(err)
+
+	// Run doctor
+	err = suite.runCommand("doctor")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Removed 1 invalid entry")
+	suite.Contains(output, ".vimrc")
+	suite.Contains(output, "lnk push")
+
+	// Verify .lnk file was cleaned
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.NoError(err)
+	suite.Equal(".bashrc\n", string(lnkContent))
+
+	// Verify git commit was made
+	gitCmd := exec.Command("git", "log", "--oneline", "--format=%s", "-1")
+	gitCmd.Dir = lnkDir
+	commitOutput, err := gitCmd.Output()
+	suite.NoError(err)
+	suite.Contains(string(commitOutput), "lnk: cleaned 1 invalid")
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_WithHost() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a host-specific file
+	testFile := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", "--host", "work", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a second host-specific file, then delete it from repo
+	testFile2 := filepath.Join(suite.tempDir, ".zshrc")
+	err = os.WriteFile(testFile2, []byte("# zsh"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", "--host", "work", testFile2)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Delete the stored file from repo
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	repoZshrc := filepath.Join(lnkDir, "work.lnk", ".zshrc")
+	err = os.Remove(repoZshrc)
+	suite.Require().NoError(err)
+
+	// Run doctor with --host flag
+	err = suite.runCommand("doctor", "--host", "work")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "host: work")
+	suite.Contains(output, ".zshrc")
+	suite.Contains(output, "invalid")
+
+	// Verify .lnk.work was cleaned
+	hostLnkFile := filepath.Join(lnkDir, ".lnk.work")
+	hostContent, err := os.ReadFile(hostLnkFile)
+	suite.NoError(err)
+	suite.Equal(".vimrc\n", string(hostContent))
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_EmptyRepo() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Run doctor on repo with no managed files
+	err = suite.runCommand("doctor")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Repository is healthy")
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_HelpText() {
+	err := suite.runCommand("doctor", "--help")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Scans the lnk repository")
+	suite.Contains(output, "--host")
+	suite.Contains(output, "--dry-run")
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_DryRun_AllValid() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Run doctor --dry-run — everything should be healthy
+	err = suite.runCommand("doctor", "--dry-run")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Repository is healthy")
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_DryRun_ShowsInvalidEntries() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add two files
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+
+	testFile2 := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile2, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile2)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Delete .vimrc from repo to create invalid entry
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	repoVimrc := filepath.Join(lnkDir, ".vimrc")
+	err = os.Remove(repoVimrc)
+	suite.Require().NoError(err)
+
+	// Run doctor --dry-run
+	err = suite.runCommand("doctor", "--dry-run")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Would remove 1 invalid entry")
+	suite.Contains(output, ".vimrc")
+	suite.Contains(output, "run without --dry-run")
+
+	// Verify NO actual changes were made — .lnk file still contains both entries
+	lnkFile := filepath.Join(lnkDir, ".lnk")
+	lnkContent, err := os.ReadFile(lnkFile)
+	suite.NoError(err)
+	suite.Contains(string(lnkContent), ".bashrc")
+	suite.Contains(string(lnkContent), ".vimrc")
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_DryRun_WithHost() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a host-specific file
+	testFile := filepath.Join(suite.tempDir, ".vimrc")
+	err = os.WriteFile(testFile, []byte("set number"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", "--host", "work", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Delete from host storage
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	repoVimrc := filepath.Join(lnkDir, "work.lnk", ".vimrc")
+	err = os.Remove(repoVimrc)
+	suite.Require().NoError(err)
+
+	// Run doctor --dry-run --host work
+	err = suite.runCommand("doctor", "--dry-run", "--host", "work")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "host: work")
+	suite.Contains(output, ".vimrc")
+	suite.Contains(output, "invalid")
+	suite.Contains(output, "run without --dry-run")
+
+	// Verify NO actual changes — .lnk.work still contains entry
+	hostLnkFile := filepath.Join(lnkDir, ".lnk.work")
+	hostContent, err := os.ReadFile(hostLnkFile)
+	suite.NoError(err)
+	suite.Contains(string(hostContent), ".vimrc")
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_DryRun_EmptyRepo() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Run doctor --dry-run on repo with no managed files
+	err = suite.runCommand("doctor", "--dry-run")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Repository is healthy")
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_DryRun_MultipleInvalid() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add three files
+	files := []string{".bashrc", ".vimrc", ".zshrc"}
+	for _, name := range files {
+		testFile := filepath.Join(suite.tempDir, name)
+		err = os.WriteFile(testFile, []byte("content"), 0644)
+		suite.Require().NoError(err)
+		err = suite.runCommand("add", testFile)
+		suite.Require().NoError(err)
+	}
+	suite.stdout.Reset()
+
+	// Delete two from repo
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	err = os.Remove(filepath.Join(lnkDir, ".vimrc"))
+	suite.Require().NoError(err)
+	err = os.Remove(filepath.Join(lnkDir, ".zshrc"))
+	suite.Require().NoError(err)
+
+	// Run doctor --dry-run
+	err = suite.runCommand("doctor", "--dry-run")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Would remove 2 invalid entries")
+	suite.Contains(output, ".vimrc")
+	suite.Contains(output, ".zshrc")
+	suite.NotContains(output, "Fixed") // Should NOT use "Fixed" in dry-run
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_BrokenSymlinks() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Remove the symlink to create a broken symlink scenario
+	err = os.Remove(testFile)
+	suite.Require().NoError(err)
+
+	// Run doctor
+	err = suite.runCommand("doctor")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Restored 1 broken symlink")
+	suite.Contains(output, ".bashrc")
+
+	// Verify symlink was restored
+	info, err := os.Lstat(testFile)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_DryRun_BrokenSymlinks() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Remove the symlink
+	err = os.Remove(testFile)
+	suite.Require().NoError(err)
+
+	// Run doctor --dry-run
+	err = suite.runCommand("doctor", "--dry-run")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Would fix 1 broken symlink")
+	suite.Contains(output, ".bashrc")
+
+	// Verify NO actual fix — symlink should still be missing
+	_, err = os.Lstat(testFile)
+	suite.True(os.IsNotExist(err))
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_OrphanedFiles() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create an orphaned file in the repo
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	orphanFile := filepath.Join(lnkDir, "orphan.txt")
+	err = os.WriteFile(orphanFile, []byte("orphaned"), 0644)
+	suite.Require().NoError(err)
+
+	// Stage and commit the orphan so git knows about it
+	gitCmd := exec.Command("git", "add", "orphan.txt")
+	gitCmd.Dir = lnkDir
+	err = gitCmd.Run()
+	suite.Require().NoError(err)
+	gitCmd = exec.Command("git", "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "add orphan")
+	gitCmd.Dir = lnkDir
+	err = gitCmd.Run()
+	suite.Require().NoError(err)
+
+	// Run doctor
+	err = suite.runCommand("doctor")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Removed 1 orphaned file")
+	suite.Contains(output, "orphan.txt")
+
+	// Verify orphan was deleted
+	_, err = os.Stat(orphanFile)
+	suite.True(os.IsNotExist(err))
+}
+
+func (suite *CLITestSuite) TestDoctorCommand_DryRun_OrphanedFiles() {
+	// Initialize repository
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Add a file
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create an orphaned file in the repo
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	orphanFile := filepath.Join(lnkDir, "orphan.txt")
+	err = os.WriteFile(orphanFile, []byte("orphaned"), 0644)
+	suite.Require().NoError(err)
+
+	// Run doctor --dry-run
+	err = suite.runCommand("doctor", "--dry-run")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Would remove 1 orphaned file")
+	suite.Contains(output, "orphan.txt")
+
+	// Verify NO actual deletion — orphan still exists
+	suite.FileExists(orphanFile)
+}
+
 func TestCLISuite(t *testing.T) {
 	suite.Run(t, new(CLITestSuite))
 }

@@ -81,6 +81,7 @@ Supports both common configurations, host-specific setups, and bulk operations f
 	rootCmd.AddCommand(newRemoveCmd())
 	rootCmd.AddCommand(newListCmd())
 	rootCmd.AddCommand(newDiffCmd())
+	rootCmd.AddCommand(newDoctorCmd())
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newPushCmd())
 	rootCmd.AddCommand(newPullCmd())
