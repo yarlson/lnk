@@ -2748,7 +2748,6 @@ func (suite *CoreTestSuite) TestDoctorNoInvalidEntries() {
 	suite.False(result.HasIssues())
 	suite.Empty(result.InvalidEntries)
 	suite.Empty(result.BrokenSymlinks)
-	suite.Empty(result.OrphanedFiles)
 }
 
 // Test Doctor removes entries for missing repo files
@@ -2867,79 +2866,11 @@ func (suite *CoreTestSuite) TestDoctorFixesBrokenSymlinks() {
 	suite.Require().NoError(err)
 	suite.Equal([]string{".bashrc"}, result.BrokenSymlinks)
 	suite.Empty(result.InvalidEntries)
-	suite.Empty(result.OrphanedFiles)
 
 	// Verify the symlink was restored
 	info, err := os.Lstat(testFile)
 	suite.Require().NoError(err)
 	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
-}
-
-// Test Doctor detects and removes orphaned files
-func (suite *CoreTestSuite) TestDoctorRemovesOrphanedFiles() {
-	err := suite.lnk.Init()
-	suite.Require().NoError(err)
-
-	// Add a real file
-	testFile := filepath.Join(suite.tempDir, ".bashrc")
-	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
-	suite.Require().NoError(err)
-	err = suite.lnk.Add(testFile)
-	suite.Require().NoError(err)
-
-	// Create an orphan file in the repo (not tracked in .lnk)
-	lnkDir := filepath.Join(suite.tempDir, "lnk")
-	orphanFile := filepath.Join(lnkDir, "orphan.txt")
-	err = os.WriteFile(orphanFile, []byte("orphaned content"), 0644)
-	suite.Require().NoError(err)
-
-	// Stage the orphan so git knows about it
-	gitCmd := exec.Command("git", "add", "orphan.txt")
-	gitCmd.Dir = lnkDir
-	err = gitCmd.Run()
-	suite.Require().NoError(err)
-	gitCmd = exec.Command("git", "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "add orphan")
-	gitCmd.Dir = lnkDir
-	err = gitCmd.Run()
-	suite.Require().NoError(err)
-
-	// Run doctor — should detect and remove the orphan
-	result, err := suite.lnk.Doctor()
-	suite.Require().NoError(err)
-	suite.Equal([]string{"orphan.txt"}, result.OrphanedFiles)
-	suite.Empty(result.InvalidEntries)
-	suite.Empty(result.BrokenSymlinks)
-
-	// Verify the orphan was deleted
-	_, err = os.Stat(orphanFile)
-	suite.True(os.IsNotExist(err))
-}
-
-// Test Doctor does not remove infrastructure files
-func (suite *CoreTestSuite) TestDoctorDoesNotRemoveInfrastructure() {
-	err := suite.lnk.Init()
-	suite.Require().NoError(err)
-
-	// Add a real file
-	testFile := filepath.Join(suite.tempDir, ".bashrc")
-	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
-	suite.Require().NoError(err)
-	err = suite.lnk.Add(testFile)
-	suite.Require().NoError(err)
-
-	// Create bootstrap.sh in the repo (should be excluded)
-	lnkDir := filepath.Join(suite.tempDir, "lnk")
-	bootstrapFile := filepath.Join(lnkDir, "bootstrap.sh")
-	err = os.WriteFile(bootstrapFile, []byte("#!/bin/bash\necho hello"), 0755)
-	suite.Require().NoError(err)
-
-	// Run doctor — bootstrap.sh should NOT appear as orphan
-	result, err := suite.lnk.Doctor()
-	suite.Require().NoError(err)
-	suite.Empty(result.OrphanedFiles, "bootstrap.sh should not be treated as orphaned")
-
-	// Verify bootstrap.sh still exists
-	suite.FileExists(bootstrapFile)
 }
 
 // Test Doctor handles combined issues
@@ -2971,67 +2902,12 @@ func (suite *CoreTestSuite) TestDoctorCombinedIssues() {
 	err = os.Remove(testFile)
 	suite.Require().NoError(err)
 
-	// 3. Create an orphan file
-	orphanFile := filepath.Join(lnkDir, "orphan.txt")
-	err = os.WriteFile(orphanFile, []byte("orphaned"), 0644)
-	suite.Require().NoError(err)
-	gitCmd := exec.Command("git", "add", "orphan.txt")
-	gitCmd.Dir = lnkDir
-	err = gitCmd.Run()
-	suite.Require().NoError(err)
-	gitCmd = exec.Command("git", "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "add orphan")
-	gitCmd.Dir = lnkDir
-	err = gitCmd.Run()
-	suite.Require().NoError(err)
-
 	// Run doctor
 	result, err := suite.lnk.Doctor()
 	suite.Require().NoError(err)
 	suite.Equal([]string{".vimrc"}, result.InvalidEntries)
 	suite.Equal([]string{".bashrc"}, result.BrokenSymlinks)
-	suite.Equal([]string{"orphan.txt"}, result.OrphanedFiles)
-	suite.Equal(3, result.TotalIssues())
-}
-
-// Test Doctor with orphaned files in host-specific config
-func (suite *CoreTestSuite) TestDoctorOrphanedFilesWithHost() {
-	err := suite.lnk.Init()
-	suite.Require().NoError(err)
-
-	hostLnk := NewLnk(WithHost("work"))
-
-	// Add a host-specific file
-	testFile := filepath.Join(suite.tempDir, ".vimrc")
-	err = os.WriteFile(testFile, []byte("set number"), 0644)
-	suite.Require().NoError(err)
-	err = hostLnk.Add(testFile)
-	suite.Require().NoError(err)
-
-	// Create an orphan in host storage
-	lnkDir := filepath.Join(suite.tempDir, "lnk")
-	hostStorageDir := filepath.Join(lnkDir, "work.lnk")
-	orphanFile := filepath.Join(hostStorageDir, "orphan.txt")
-	err = os.WriteFile(orphanFile, []byte("orphaned"), 0644)
-	suite.Require().NoError(err)
-
-	// Stage the orphan
-	gitCmd := exec.Command("git", "add", filepath.Join("work.lnk", "orphan.txt"))
-	gitCmd.Dir = lnkDir
-	err = gitCmd.Run()
-	suite.Require().NoError(err)
-	gitCmd = exec.Command("git", "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "add orphan")
-	gitCmd.Dir = lnkDir
-	err = gitCmd.Run()
-	suite.Require().NoError(err)
-
-	// Run doctor with host
-	result, err := hostLnk.Doctor()
-	suite.Require().NoError(err)
-	suite.Equal([]string{"orphan.txt"}, result.OrphanedFiles)
-
-	// Verify orphan was deleted
-	_, err = os.Stat(orphanFile)
-	suite.True(os.IsNotExist(err))
+	suite.Equal(2, result.TotalIssues())
 }
 
 // Test PreviewDoctor with no issues
@@ -3214,100 +3090,6 @@ func (suite *CoreTestSuite) TestPreviewDoctorDetectsBrokenSymlinks() {
 	commitsAfter, err := suite.lnk.GetCommits()
 	suite.Require().NoError(err)
 	suite.Equal(len(commitsBefore), len(commitsAfter))
-}
-
-// Test PreviewDoctor detects orphaned files
-func (suite *CoreTestSuite) TestPreviewDoctorDetectsOrphanedFiles() {
-	err := suite.lnk.Init()
-	suite.Require().NoError(err)
-
-	// Add a file
-	testFile := filepath.Join(suite.tempDir, ".bashrc")
-	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
-	suite.Require().NoError(err)
-	err = suite.lnk.Add(testFile)
-	suite.Require().NoError(err)
-
-	// Create orphan file
-	lnkDir := filepath.Join(suite.tempDir, "lnk")
-	orphanFile := filepath.Join(lnkDir, "orphan.txt")
-	err = os.WriteFile(orphanFile, []byte("orphaned"), 0644)
-	suite.Require().NoError(err)
-
-	// Get commit count before preview
-	commitsBefore, err := suite.lnk.GetCommits()
-	suite.Require().NoError(err)
-
-	// Preview doctor — should detect orphan
-	result, err := suite.lnk.PreviewDoctor()
-	suite.Require().NoError(err)
-	suite.Equal([]string{"orphan.txt"}, result.OrphanedFiles)
-
-	// Verify NO mutation: orphan still exists
-	suite.FileExists(orphanFile)
-
-	// Verify NO git commit was created
-	commitsAfter, err := suite.lnk.GetCommits()
-	suite.Require().NoError(err)
-	suite.Equal(len(commitsBefore), len(commitsAfter))
-}
-
-// Test infrastructure files are excluded from orphan detection
-func (suite *CoreTestSuite) TestDoctorExcludesInfrastructureFiles() {
-	err := suite.lnk.Init()
-	suite.Require().NoError(err)
-
-	// Add a real file so there's something tracked
-	testFile := filepath.Join(suite.tempDir, ".bashrc")
-	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
-	suite.Require().NoError(err)
-	err = suite.lnk.Add(testFile)
-	suite.Require().NoError(err)
-
-	lnkDir := filepath.Join(suite.tempDir, "lnk")
-
-	// Create bootstrap.sh
-	err = os.WriteFile(filepath.Join(lnkDir, "bootstrap.sh"), []byte("#!/bin/bash"), 0755)
-	suite.Require().NoError(err)
-
-	// Create a host storage directory (should be excluded for common config)
-	hostDir := filepath.Join(lnkDir, "myhost.lnk")
-	err = os.MkdirAll(hostDir, 0755)
-	suite.Require().NoError(err)
-	err = os.WriteFile(filepath.Join(hostDir, "somefile"), []byte("content"), 0644)
-	suite.Require().NoError(err)
-
-	// Preview doctor — none of these should be orphans
-	result, err := suite.lnk.PreviewDoctor()
-	suite.Require().NoError(err)
-	suite.Empty(result.OrphanedFiles, "Infrastructure files should not be detected as orphans")
-}
-
-// Test orphan detection with nested orphan directory
-func (suite *CoreTestSuite) TestDoctorOrphanedDirectory() {
-	err := suite.lnk.Init()
-	suite.Require().NoError(err)
-
-	// Add a real file
-	testFile := filepath.Join(suite.tempDir, ".bashrc")
-	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
-	suite.Require().NoError(err)
-	err = suite.lnk.Add(testFile)
-	suite.Require().NoError(err)
-
-	lnkDir := filepath.Join(suite.tempDir, "lnk")
-
-	// Create an orphan directory with files
-	orphanDir := filepath.Join(lnkDir, "orphandir")
-	err = os.MkdirAll(orphanDir, 0755)
-	suite.Require().NoError(err)
-	err = os.WriteFile(filepath.Join(orphanDir, "file1.txt"), []byte("content"), 0644)
-	suite.Require().NoError(err)
-
-	// Preview doctor — should detect the orphaned directory
-	result, err := suite.lnk.PreviewDoctor()
-	suite.Require().NoError(err)
-	suite.Contains(result.OrphanedFiles, "orphandir")
 }
 
 func TestCoreSuite(t *testing.T) {

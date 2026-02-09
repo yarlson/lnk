@@ -363,11 +363,10 @@ lnk doctor --host laptop
 lnk doctor --host laptop --dry-run
 ```
 
-The `doctor` command scans for three categories of issues:
+The `doctor` command scans for two categories of issues:
 
 - **Invalid entries**: files listed in `.lnk` but missing from repo storage
 - **Broken symlinks**: managed files whose symlinks at `$HOME` are missing or point to the wrong location
-- **Orphaned files**: files in repo storage not tracked in `.lnk`
 
 ### Output Formatting
 

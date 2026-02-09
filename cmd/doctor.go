@@ -17,7 +17,6 @@ func newDoctorCmd() *cobra.Command {
 Checks performed:
   • Invalid entries: .lnk entries whose stored files no longer exist
   • Broken symlinks: managed files whose symlinks are missing or broken
-  • Orphaned files: files in repo storage not tracked in .lnk
 
 Use --host to check a specific host configuration instead of the common one.
 Use --dry-run to preview what would be fixed without making changes.`,
@@ -76,17 +75,6 @@ Use --dry-run to preview what would be fixed without making changes.`,
 					}
 				}
 
-				// Show orphaned files
-				if len(result.OrphanedFiles) > 0 {
-					w.WritelnString("")
-					w.WriteString("   ").
-						Writeln(Message{Text: fmt.Sprintf("Would remove %d orphaned file%s:", len(result.OrphanedFiles), pluralS(len(result.OrphanedFiles))), Emoji: "📦", Bold: true})
-					for _, entry := range result.OrphanedFiles {
-						w.WriteString("      ").
-							Writeln(Message{Text: entry, Color: ColorRed, Emoji: "📦"})
-					}
-				}
-
 				w.WritelnString("").
 					Writeln(Info("To proceed: run without --dry-run flag"))
 
@@ -135,17 +123,6 @@ Use --dry-run to preview what would be fixed without making changes.`,
 				for _, entry := range result.InvalidEntries {
 					w.WriteString("      ").
 						Writeln(Message{Text: entry, Color: ColorRed, Emoji: "🗑️"})
-				}
-			}
-
-			// Show removed orphaned files
-			if len(result.OrphanedFiles) > 0 {
-				w.WritelnString("")
-				w.WriteString("   ").
-					Writeln(Message{Text: fmt.Sprintf("Removed %d orphaned file%s:", len(result.OrphanedFiles), pluralS(len(result.OrphanedFiles))), Emoji: "📦", Bold: true})
-				for _, entry := range result.OrphanedFiles {
-					w.WriteString("      ").
-						Writeln(Message{Text: entry, Color: ColorRed, Emoji: "📦"})
 				}
 			}
 
