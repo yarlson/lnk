@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+
+	"github.com/yarlson/lnk/internal/fs"
 )
 
 type CoreTestSuite struct {
@@ -187,8 +189,8 @@ func (suite *CoreTestSuite) TestGetRelativePath() {
 			// Set HOME env for the test
 			suite.T().Setenv("HOME", tt.homeDir)
 
-			// Call getRelativePath
-			got, err := getRelativePath(tt.path)
+			// Call GetRelativePath (now in filemanager package)
+			got, err := fs.GetRelativePath(tt.path)
 
 			// Verify error expectation
 			if tt.wantErr {

@@ -641,7 +641,7 @@ func (suite *CoreTestSuite) TestWalkDirectory() {
 	suite.Require().NoError(os.WriteFile(file4, []byte("light theme"), 0644))
 
 	// Call walkDirectory method
-	files, err := suite.lnk.walkDirectory(configDir)
+	files, err := suite.lnk.files.WalkDirectory(configDir)
 	suite.Require().NoError(err, "walkDirectory should succeed")
 
 	// Should find all 4 files
@@ -678,7 +678,7 @@ func (suite *CoreTestSuite) TestWalkDirectoryIncludesHiddenFiles() {
 	suite.Require().NoError(os.WriteFile(hiddenDirFile, []byte("in hidden dir"), 0644))
 
 	// Call walkDirectory method
-	files, err := suite.lnk.walkDirectory(testDir)
+	files, err := suite.lnk.files.WalkDirectory(testDir)
 	suite.Require().NoError(err, "walkDirectory should succeed with hidden files")
 
 	// Should find all files including hidden ones
@@ -708,7 +708,7 @@ func (suite *CoreTestSuite) TestWalkDirectorySymlinkHandling() {
 	suite.Require().NoError(err)
 
 	// Call walkDirectory method
-	files, err := suite.lnk.walkDirectory(testDir)
+	files, err := suite.lnk.files.WalkDirectory(testDir)
 	suite.Require().NoError(err, "walkDirectory should handle symlinks")
 
 	// Should include both regular file and properly handle symlink
@@ -747,7 +747,7 @@ func (suite *CoreTestSuite) TestWalkDirectoryEmptyDirs() {
 	suite.Require().NoError(os.WriteFile(testFile, []byte("content"), 0644))
 
 	// Call walkDirectory method
-	files, err := suite.lnk.walkDirectory(testDir)
+	files, err := suite.lnk.files.WalkDirectory(testDir)
 	suite.Require().NoError(err, "walkDirectory should skip empty directories")
 
 	// Should only find the one file, not empty directories
@@ -1086,7 +1086,7 @@ func (suite *CoreTestSuite) TestRollbackOperations() {
 				}
 
 				// Move file to repo
-				repoFile := filepath.Join(suite.lnk.repoPath, "test.txt")
+				repoFile := filepath.Join(suite.lnk.tracker.RepoPath(), "test.txt")
 				err = os.Rename(testFile, repoFile)
 				if err != nil {
 					return nil, err
@@ -1099,7 +1099,7 @@ func (suite *CoreTestSuite) TestRollbackOperations() {
 				}
 
 				// Create rollback action
-				action := suite.lnk.createRollbackAction(testFile, repoFile, "test.txt", info)
+				action := suite.lnk.files.CreateRollbackAction(testFile, repoFile, "test.txt", info)
 				return []func() error{action}, nil
 			},
 			wantErr: false,
@@ -1109,7 +1109,7 @@ func (suite *CoreTestSuite) TestRollbackOperations() {
 				suite.FileExists(testFile, "File should be restored to original location")
 
 				// Verify repo file is removed
-				repoFile := filepath.Join(suite.lnk.repoPath, "test.txt")
+				repoFile := filepath.Join(suite.lnk.tracker.RepoPath(), "test.txt")
 				suite.NoFileExists(repoFile, "Repo file should be removed")
 
 				// Verify content is preserved
@@ -1131,7 +1131,7 @@ func (suite *CoreTestSuite) TestRollbackOperations() {
 						return nil, err
 					}
 
-					repoFile := filepath.Join(suite.lnk.repoPath, fmt.Sprintf("test%d.txt", i))
+					repoFile := filepath.Join(suite.lnk.tracker.RepoPath(), fmt.Sprintf("test%d.txt", i))
 					err = os.Rename(testFile, repoFile)
 					if err != nil {
 						return nil, err
@@ -1142,7 +1142,7 @@ func (suite *CoreTestSuite) TestRollbackOperations() {
 						return nil, err
 					}
 
-					action := suite.lnk.createRollbackAction(testFile, repoFile, fmt.Sprintf("test%d.txt", i), info)
+					action := suite.lnk.files.CreateRollbackAction(testFile, repoFile, fmt.Sprintf("test%d.txt", i), info)
 					actions = append(actions, action)
 				}
 
@@ -1170,7 +1170,7 @@ func (suite *CoreTestSuite) TestRollbackOperations() {
 			suite.Require().NoError(err, "Setup failed for test: %s", tt.name)
 
 			// Execute rollback
-			suite.lnk.rollbackOperations(actions)
+			suite.lnk.files.RollbackAll(actions)
 
 			// Verify
 			if tt.verifyFunc != nil {

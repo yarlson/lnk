@@ -1,93 +1,145 @@
-// Package lnk Package core implements the business logic for lnk.
+// Package lnk implements the business logic for lnk.
 package lnk
 
 import (
-	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/yarlson/lnk/internal/bootstrapper"
+	"github.com/yarlson/lnk/internal/doctor"
+	"github.com/yarlson/lnk/internal/filemanager"
 	"github.com/yarlson/lnk/internal/fs"
 	"github.com/yarlson/lnk/internal/git"
+	"github.com/yarlson/lnk/internal/initializer"
+	"github.com/yarlson/lnk/internal/lnkerror"
+	"github.com/yarlson/lnk/internal/syncer"
+	"github.com/yarlson/lnk/internal/tracker"
 )
 
-// Sentinel errors for lnk operations.
+// Sentinel errors re-exported from lnkerror for backwards compatibility.
 var (
-	ErrManagedFilesExist = errors.New("Directory already contains managed files")
-	ErrGitRepoExists     = errors.New("Directory contains an existing Git repository")
-	ErrAlreadyManaged    = errors.New("File is already managed by lnk")
-	ErrNotManaged        = errors.New("File is not managed by lnk")
-	ErrNotInitialized    = errors.New("Lnk repository not initialized")
-	ErrBootstrapNotFound = errors.New("Bootstrap script not found")
-	ErrBootstrapFailed   = errors.New("Bootstrap script failed with error")
-	ErrBootstrapPerms    = errors.New("Failed to make bootstrap script executable")
+	ErrManagedFilesExist = lnkerror.ErrManagedFilesExist
+	ErrGitRepoExists     = lnkerror.ErrGitRepoExists
+	ErrAlreadyManaged    = lnkerror.ErrAlreadyManaged
+	ErrNotManaged        = lnkerror.ErrNotManaged
+	ErrNotInitialized    = lnkerror.ErrNotInitialized
+	ErrBootstrapNotFound = lnkerror.ErrBootstrapNotFound
+	ErrBootstrapFailed   = lnkerror.ErrBootstrapFailed
+	ErrBootstrapPerms    = lnkerror.ErrBootstrapPerms
 )
 
-// Lnk represents the main application logic
+// ProgressCallback defines the signature for progress reporting callbacks.
+type ProgressCallback = filemanager.ProgressCallback
+
+// StatusInfo contains repository sync status information.
+type StatusInfo = syncer.StatusInfo
+
+// DoctorResult contains the results of a doctor scan or execution.
+type DoctorResult = doctor.Result
+
+// Lnk is the facade that composes focused collaborators for dotfile management.
 type Lnk struct {
 	repoPath string
-	host     string // Host-specific configuration
-	git      *git.Git
-	fs       *fs.FileSystem
+	host     string
+	tracker  *tracker.Tracker
+	files    *filemanager.Manager
+	syncer   *syncer.Syncer
+	init     *initializer.Service
+	boot     *bootstrapper.Runner
+	health   *doctor.Checker
 }
 
 // Option configures a Lnk instance.
 type Option func(*Lnk)
 
-// WithHost sets the host for host-specific configuration
+// WithHost sets the host for host-specific configuration.
 func WithHost(host string) Option {
 	return func(l *Lnk) {
 		l.host = host
 	}
 }
 
-// NewLnk creates a new Lnk instance with optional configuration
+// NewLnk creates a new Lnk instance with optional configuration.
 func NewLnk(opts ...Option) *Lnk {
 	repoPath := GetRepoPath()
-	lnk := &Lnk{
+	l := &Lnk{
 		repoPath: repoPath,
 		host:     "",
-		git:      git.New(repoPath),
-		fs:       fs.New(),
 	}
 
 	for _, opt := range opts {
-		opt(lnk)
+		opt(l)
 	}
 
-	return lnk
+	// Wire collaborators after options are applied (host may change).
+	g := git.New(repoPath)
+	f := fs.New()
+	t := tracker.New(repoPath, l.host)
+
+	l.tracker = t
+	l.files = filemanager.New(repoPath, l.host, g, f, t)
+	l.syncer = syncer.New(repoPath, l.host, g, f, t)
+	l.init = initializer.New(repoPath, g, t)
+	l.boot = bootstrapper.New(repoPath, g)
+	l.health = doctor.New(repoPath, l.host, g, t, l.syncer)
+
+	return l
 }
 
-// HasUserContent checks if the repository contains managed files
-// by looking for .lnk tracker files (common or host-specific)
-func (l *Lnk) HasUserContent() bool {
-	// Check for common tracker file
-	commonTracker := filepath.Join(l.repoPath, ".lnk")
-	if _, err := os.Stat(commonTracker); err == nil {
-		return true
-	}
+// --- Initialization delegates ---
 
-	// Check for host-specific tracker files if host is set
-	if l.host != "" {
-		hostTracker := filepath.Join(l.repoPath, fmt.Sprintf(".lnk.%s", l.host))
-		if _, err := os.Stat(hostTracker); err == nil {
-			return true
-		}
-	} else {
-		// If no specific host is set, check for any host-specific tracker files
-		// This handles cases where we want to detect any managed content
-		pattern := filepath.Join(l.repoPath, ".lnk.*")
-		matches, err := filepath.Glob(pattern)
-		if err == nil && len(matches) > 0 {
-			return true
-		}
-	}
+func (l *Lnk) Init() error                           { return l.init.Init() }
+func (l *Lnk) InitWithRemote(remoteURL string) error { return l.init.InitWithRemote(remoteURL) }
+func (l *Lnk) InitWithRemoteForce(remoteURL string, force bool) error {
+	return l.init.InitWithRemoteForce(remoteURL, force)
+}
+func (l *Lnk) Clone(url string) error           { return l.init.Clone(url) }
+func (l *Lnk) AddRemote(name, url string) error { return l.init.AddRemote(name, url) }
+func (l *Lnk) HasUserContent() bool             { return l.init.HasUserContent() }
 
-	return false
+// --- File management delegates ---
+
+func (l *Lnk) Add(filePath string) error        { return l.files.Add(filePath) }
+func (l *Lnk) AddMultiple(paths []string) error { return l.files.AddMultiple(paths, nil) }
+func (l *Lnk) AddRecursive(paths []string) error {
+	return l.files.AddRecursiveWithProgress(paths, nil)
+}
+func (l *Lnk) AddRecursiveWithProgress(paths []string, progress ProgressCallback) error {
+	return l.files.AddRecursiveWithProgress(paths, progress)
+}
+func (l *Lnk) PreviewAdd(paths []string, recursive bool) ([]string, error) {
+	return l.files.PreviewAdd(paths, recursive)
+}
+func (l *Lnk) Remove(filePath string) error      { return l.files.Remove(filePath) }
+func (l *Lnk) RemoveForce(filePath string) error { return l.files.RemoveForce(filePath) }
+
+// --- Sync delegates ---
+
+func (l *Lnk) Status() (*StatusInfo, error)      { return l.syncer.Status() }
+func (l *Lnk) Diff(color bool) (string, error)   { return l.syncer.Diff(color) }
+func (l *Lnk) Push(message string) error          { return l.syncer.Push(message) }
+func (l *Lnk) Pull() ([]string, error)            { return l.syncer.Pull() }
+func (l *Lnk) List() ([]string, error)            { return l.syncer.List() }
+func (l *Lnk) GetCommits() ([]string, error)      { return l.syncer.GetCommits() }
+func (l *Lnk) RestoreSymlinks() ([]string, error) { return l.syncer.RestoreSymlinks() }
+
+// --- Bootstrap delegates ---
+
+func (l *Lnk) FindBootstrapScript() (string, error) { return l.boot.FindScript() }
+func (l *Lnk) RunBootstrapScript(scriptName string, stdout, stderr io.Writer, stdin io.Reader) error {
+	return l.boot.RunScript(scriptName, stdout, stderr, stdin)
 }
 
-// GetCurrentHostname returns the current system hostname
+// --- Doctor delegates ---
+
+func (l *Lnk) PreviewDoctor() (*DoctorResult, error) { return l.health.Preview() }
+func (l *Lnk) Doctor() (*DoctorResult, error)         { return l.health.Fix() }
+
+// --- Package-level helpers ---
+
+// GetCurrentHostname returns the current system hostname.
 func GetCurrentHostname() (string, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -96,60 +148,17 @@ func GetCurrentHostname() (string, error) {
 	return hostname, nil
 }
 
-// GetRepoPath returns the path to the lnk repository directory
-// It respects XDG_CONFIG_HOME if set, otherwise defaults to ~/.config/lnk
+// GetRepoPath returns the path to the lnk repository directory.
+// It respects XDG_CONFIG_HOME if set, otherwise defaults to ~/.config/lnk.
 func GetRepoPath() string {
 	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfig == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			// Fallback to current directory if we can't get home
 			xdgConfig = "."
 		} else {
 			xdgConfig = filepath.Join(homeDir, ".config")
 		}
 	}
 	return filepath.Join(xdgConfig, "lnk")
-}
-
-// getHostStoragePath returns the storage path for host-specific or common files
-func (l *Lnk) getHostStoragePath() string {
-	if l.host == "" {
-		// Common configuration - store in root of repo
-		return l.repoPath
-	}
-	// Host-specific configuration - store in host subdirectory
-	return filepath.Join(l.repoPath, l.host+".lnk")
-}
-
-// getLnkFileName returns the appropriate .lnk tracking file name
-func (l *Lnk) getLnkFileName() string {
-	if l.host == "" {
-		return ".lnk"
-	}
-	return ".lnk." + l.host
-}
-
-// getRelativePath converts an absolute path to a relative path from home directory
-func getRelativePath(absPath string) (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	// Check if the file is under home directory
-	relPath, err := filepath.Rel(homeDir, absPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to get relative path: %w", err)
-	}
-
-	// If the relative path starts with "..", the file is outside home directory
-	// In this case, use the absolute path as relative (without the leading slash)
-	if strings.HasPrefix(relPath, "..") {
-		// Use absolute path but remove leading slash and drive letter (for cross-platform)
-		cleanPath := strings.TrimPrefix(absPath, "/")
-		return cleanPath, nil
-	}
-
-	return relPath, nil
 }

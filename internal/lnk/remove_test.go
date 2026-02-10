@@ -127,7 +127,7 @@ func (suite *CoreTestSuite) TestRemoveForce() {
 			wantErr: false,
 			verifyFunc: func(filePath string) {
 				// Verify file is no longer in tracking
-				items, err := suite.lnk.getManagedItems()
+				items, err := suite.lnk.tracker.GetManagedItems()
 				suite.NoError(err)
 				suite.NotContains(items, ".bashrc")
 			},
@@ -154,7 +154,7 @@ func (suite *CoreTestSuite) TestRemoveForce() {
 			wantErr: false,
 			verifyFunc: func(filePath string) {
 				// Verify file is no longer in tracking
-				items, err := suite.lnk.getManagedItems()
+				items, err := suite.lnk.tracker.GetManagedItems()
 				suite.NoError(err)
 				suite.NotContains(items, ".vimrc")
 

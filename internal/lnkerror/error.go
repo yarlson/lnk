@@ -1,5 +1,19 @@
-// Package lnkerror provides a single error wrapper type for the lnk application.
+// Package lnkerror provides a single error wrapper type and sentinel errors for the lnk application.
 package lnkerror
+
+import "errors"
+
+// Sentinel errors for lnk operations.
+var (
+	ErrManagedFilesExist = errors.New("Directory already contains managed files")
+	ErrGitRepoExists     = errors.New("Directory contains an existing Git repository")
+	ErrAlreadyManaged    = errors.New("File is already managed by lnk")
+	ErrNotManaged        = errors.New("File is not managed by lnk")
+	ErrNotInitialized    = errors.New("Lnk repository not initialized")
+	ErrBootstrapNotFound = errors.New("Bootstrap script not found")
+	ErrBootstrapFailed   = errors.New("Bootstrap script failed with error")
+	ErrBootstrapPerms    = errors.New("Failed to make bootstrap script executable")
+)
 
 // Error wraps a sentinel error with optional context for display.
 // This is the only custom error type in the codebase.

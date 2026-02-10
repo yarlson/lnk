@@ -270,7 +270,7 @@ func (suite *CoreTestSuite) TestMultihostSymlinkRestoration() {
 	hostLnk := NewLnk(WithHost("testhost"))
 
 	// Ensure host storage directory exists
-	hostStoragePath := hostLnk.getHostStoragePath()
+	hostStoragePath := hostLnk.tracker.HostStoragePath()
 	err = os.MkdirAll(hostStoragePath, 0755)
 	suite.Require().NoError(err)
 
@@ -447,8 +447,8 @@ func (suite *CoreTestSuite) TestIsValidSymlink() {
 				tt.setup()
 			}
 
-			// Call isValidSymlink with expected target
-			got := suite.lnk.isValidSymlink(tt.symlink, tt.expectedTarget)
+			// Call IsValidSymlink (now exported on syncer)
+			got := suite.lnk.syncer.IsValidSymlink(tt.symlink, tt.expectedTarget)
 
 			suite.Equal(tt.want, got, "Validation mismatch for test case: %s", tt.name)
 		})

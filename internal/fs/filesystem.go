@@ -3,6 +3,7 @@ package fs
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,4 +127,23 @@ func (fs *FileSystem) MoveDirectory(src, dst string) error {
 
 	// Move the directory
 	return os.Rename(src, dst)
+}
+
+// GetRelativePath converts an absolute path to a relative path from the home directory.
+func GetRelativePath(absPath string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	relPath, err := filepath.Rel(homeDir, absPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get relative path: %w", err)
+	}
+
+	if strings.HasPrefix(relPath, "..") {
+		return strings.TrimPrefix(absPath, "/"), nil
+	}
+
+	return relPath, nil
 }

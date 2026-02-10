@@ -34,7 +34,7 @@ func (suite *CoreTestSuite) TestAddManagedItem() {
 
 	for _, tt := range tests {
 		suite.Run(tt.name, func() {
-			err := suite.lnk.addManagedItem(tt.relativePath)
+			err := suite.lnk.tracker.AddManagedItem(tt.relativePath)
 			if tt.wantErr {
 				suite.Error(err)
 			} else {
@@ -44,7 +44,7 @@ func (suite *CoreTestSuite) TestAddManagedItem() {
 	}
 
 	// Verify all items are tracked
-	items, err := suite.lnk.getManagedItems()
+	items, err := suite.lnk.tracker.GetManagedItems()
 	suite.NoError(err)
 	suite.Len(items, 2) // Only 2 unique items
 	suite.Contains(items, ".bashrc")
@@ -95,7 +95,7 @@ func (suite *CoreTestSuite) TestGetManagedItems() {
 			err := tt.setupFunc()
 			suite.Require().NoError(err)
 
-			items, err := suite.lnk.getManagedItems()
+			items, err := suite.lnk.tracker.GetManagedItems()
 			suite.NoError(err)
 			suite.Len(items, tt.expectedCount)
 
@@ -112,9 +112,9 @@ func (suite *CoreTestSuite) TestRemoveManagedItem() {
 	suite.Require().NoError(err)
 
 	// Add some items first
-	_ = suite.lnk.addManagedItem(".bashrc")
-	_ = suite.lnk.addManagedItem(".vimrc")
-	_ = suite.lnk.addManagedItem(".gitconfig")
+	_ = suite.lnk.tracker.AddManagedItem(".bashrc")
+	_ = suite.lnk.tracker.AddManagedItem(".vimrc")
+	_ = suite.lnk.tracker.AddManagedItem(".gitconfig")
 
 	tests := []struct {
 		name         string
@@ -135,7 +135,7 @@ func (suite *CoreTestSuite) TestRemoveManagedItem() {
 
 	for _, tt := range tests {
 		suite.Run(tt.name, func() {
-			err := suite.lnk.removeManagedItem(tt.relativePath)
+			err := suite.lnk.tracker.RemoveManagedItem(tt.relativePath)
 			if tt.wantErr {
 				suite.Error(err)
 			} else {
@@ -145,7 +145,7 @@ func (suite *CoreTestSuite) TestRemoveManagedItem() {
 	}
 
 	// Verify only one item remains
-	items, err := suite.lnk.getManagedItems()
+	items, err := suite.lnk.tracker.GetManagedItems()
 	suite.NoError(err)
 	suite.Len(items, 1)
 	suite.Contains(items, ".gitconfig")
@@ -176,11 +176,11 @@ func (suite *CoreTestSuite) TestWriteManagedItems() {
 
 	for _, tt := range tests {
 		suite.Run(tt.name, func() {
-			err := suite.lnk.writeManagedItems(tt.items)
+			err := suite.lnk.tracker.WriteManagedItems(tt.items)
 			suite.NoError(err)
 
 			// Verify by reading back
-			items, err := suite.lnk.getManagedItems()
+			items, err := suite.lnk.tracker.GetManagedItems()
 			suite.NoError(err)
 			suite.ElementsMatch(tt.items, items)
 		})

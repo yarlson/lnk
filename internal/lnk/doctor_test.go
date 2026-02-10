@@ -60,7 +60,7 @@ func (suite *CoreTestSuite) TestDoctorRemovesInvalidEntries() {
 	suite.Equal([]string{".vimrc"}, result.InvalidEntries)
 
 	// Verify .lnk file only contains .bashrc
-	items, err := suite.lnk.getManagedItems()
+	items, err := suite.lnk.tracker.GetManagedItems()
 	suite.Require().NoError(err)
 	suite.Equal([]string{".bashrc"}, items)
 
@@ -98,7 +98,7 @@ func (suite *CoreTestSuite) TestDoctorRemovesPathTraversalEntries() {
 	suite.Equal([]string{"../../etc/passwd"}, result.InvalidEntries)
 
 	// Verify .lnk file is now empty
-	items, err := suite.lnk.getManagedItems()
+	items, err := suite.lnk.tracker.GetManagedItems()
 	suite.Require().NoError(err)
 	suite.Empty(items)
 }
@@ -240,7 +240,7 @@ func (suite *CoreTestSuite) TestPreviewDoctorReturnsInvalidEntries() {
 	suite.Equal([]string{".vimrc"}, result.InvalidEntries)
 
 	// Verify NO mutation: .lnk file still contains both entries
-	items, err := suite.lnk.getManagedItems()
+	items, err := suite.lnk.tracker.GetManagedItems()
 	suite.Require().NoError(err)
 	suite.Equal([]string{".bashrc", ".vimrc"}, items)
 
@@ -278,7 +278,7 @@ func (suite *CoreTestSuite) TestPreviewDoctorPathTraversalEntries() {
 	suite.Equal([]string{"../../etc/passwd"}, result.InvalidEntries)
 
 	// Verify NO mutation: .lnk file still contains the traversal entry
-	items, err := suite.lnk.getManagedItems()
+	items, err := suite.lnk.tracker.GetManagedItems()
 	suite.Require().NoError(err)
 	suite.Equal([]string{"../../etc/passwd"}, items)
 }
@@ -328,7 +328,7 @@ func (suite *CoreTestSuite) TestPreviewDoctorWithHost() {
 	suite.Equal([]string{".vimrc"}, result.InvalidEntries)
 
 	// Verify NO mutation: .lnk.work file still contains the entry
-	items, err := hostLnk.getManagedItems()
+	items, err := hostLnk.tracker.GetManagedItems()
 	suite.Require().NoError(err)
 	suite.Equal([]string{".vimrc"}, items)
 }
