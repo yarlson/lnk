@@ -83,7 +83,7 @@ jobs:
         run: go build -v ./...
 
       - name: Test GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: latest
