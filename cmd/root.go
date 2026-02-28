@@ -21,6 +21,7 @@ func NewRootCommand() *cobra.Command {
 		colors  string
 		emoji   bool
 		noEmoji bool
+		quiet   bool
 	)
 
 	rootCmd := &cobra.Command{
@@ -57,7 +58,7 @@ Supports both common configurations, host-specific setups, and bulk operations f
 			if noEmoji {
 				emojiEnabled = false
 			}
-			err := SetGlobalConfig(colors, emojiEnabled)
+			err := SetGlobalConfig(colors, emojiEnabled, quiet)
 			if err != nil {
 				return err
 			}
@@ -70,6 +71,7 @@ Supports both common configurations, host-specific setups, and bulk operations f
 	rootCmd.PersistentFlags().StringVar(&colors, "colors", "auto", "when to use colors (auto, always, never)")
 	rootCmd.PersistentFlags().BoolVar(&emoji, "emoji", true, "enable emoji in output")
 	rootCmd.PersistentFlags().BoolVar(&noEmoji, "no-emoji", false, "disable emoji in output")
+	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "suppress all output (exit code only)")
 
 	// Mark emoji flags as mutually exclusive
 	rootCmd.MarkFlagsMutuallyExclusive("emoji", "no-emoji")
