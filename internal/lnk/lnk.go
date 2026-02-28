@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/yarlson/lnk/internal/bootstrapper"
 	"github.com/yarlson/lnk/internal/doctor"
@@ -117,8 +118,8 @@ func (l *Lnk) RemoveForce(filePath string) error { return l.files.RemoveForce(fi
 
 // --- Sync delegates ---
 
-func (l *Lnk) Status() (*StatusInfo, error)      { return l.syncer.Status() }
-func (l *Lnk) Diff(color bool) (string, error)   { return l.syncer.Diff(color) }
+func (l *Lnk) Status() (*StatusInfo, error)       { return l.syncer.Status() }
+func (l *Lnk) Diff(color bool) (string, error)    { return l.syncer.Diff(color) }
 func (l *Lnk) Push(message string) error          { return l.syncer.Push(message) }
 func (l *Lnk) Pull() ([]string, error)            { return l.syncer.Pull() }
 func (l *Lnk) List() ([]string, error)            { return l.syncer.List() }
@@ -135,9 +136,21 @@ func (l *Lnk) RunBootstrapScript(scriptName string, stdout, stderr io.Writer, st
 // --- Doctor delegates ---
 
 func (l *Lnk) PreviewDoctor() (*DoctorResult, error) { return l.health.Preview() }
-func (l *Lnk) Doctor() (*DoctorResult, error)         { return l.health.Fix() }
+func (l *Lnk) Doctor() (*DoctorResult, error)        { return l.health.Fix() }
 
 // --- Package-level helpers ---
+
+// DisplayPath returns a display-friendly path, replacing the home directory with ~.
+func DisplayPath(path string) string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if strings.HasPrefix(path, homeDir) {
+		return "~" + strings.TrimPrefix(path, homeDir)
+	}
+	return path
+}
 
 // GetCurrentHostname returns the current system hostname.
 func GetCurrentHostname() (string, error) {
@@ -149,8 +162,12 @@ func GetCurrentHostname() (string, error) {
 }
 
 // GetRepoPath returns the path to the lnk repository directory.
-// It respects XDG_CONFIG_HOME if set, otherwise defaults to ~/.config/lnk.
+// Priority: LNK_HOME > XDG_CONFIG_HOME/lnk > ~/.config/lnk.
 func GetRepoPath() string {
+	if lnkHome := os.Getenv("LNK_HOME"); lnkHome != "" {
+		return lnkHome
+	}
+
 	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfig == "" {
 		homeDir, err := os.UserHomeDir()

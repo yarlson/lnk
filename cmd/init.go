@@ -20,11 +20,12 @@ func newInitCmd() *cobra.Command {
 			noBootstrap, _ := cmd.Flags().GetBool("no-bootstrap")
 			force, _ := cmd.Flags().GetBool("force")
 
-			lnk := lnk.NewLnk()
+			displayPath := lnk.DisplayPath(lnk.GetRepoPath())
+			l := lnk.NewLnk()
 			w := GetWriter(cmd)
 
 			// Show warning when force is used and there are managed files to overwrite
-			if force && remote != "" && lnk.HasUserContent() {
+			if force && remote != "" && l.HasUserContent() {
 				w.Writeln(Warning("Using --force flag: This will overwrite existing managed files")).
 					WriteString("   ").
 					Writeln(Info("Only use this if you understand the risks")).
@@ -34,7 +35,7 @@ func newInitCmd() *cobra.Command {
 				}
 			}
 
-			if err := lnk.InitWithRemoteForce(remote, force); err != nil {
+			if err := l.InitWithRemoteForce(remote, force); err != nil {
 				return err
 			}
 
@@ -45,7 +46,7 @@ func newInitCmd() *cobra.Command {
 					Writeln(Colored(remote, ColorCyan)).
 					WriteString("   ").
 					Write(Message{Text: "Location: ", Emoji: "📁"}).
-					Writeln(Colored("~/.config/lnk", ColorGray))
+					Writeln(Colored(displayPath, ColorGray))
 
 				if err := w.Err(); err != nil {
 					return err
@@ -60,7 +61,7 @@ func newInitCmd() *cobra.Command {
 						return err
 					}
 
-					scriptPath, err := lnk.FindBootstrapScript()
+					scriptPath, err := l.FindBootstrapScript()
 					if err != nil {
 						return err
 					}
@@ -77,7 +78,7 @@ func newInitCmd() *cobra.Command {
 							return err
 						}
 
-						if err := lnk.RunBootstrapScript(scriptPath, os.Stdout, os.Stderr, os.Stdin); err != nil {
+						if err := l.RunBootstrapScript(scriptPath, os.Stdout, os.Stderr, os.Stdin); err != nil {
 							w.WritelnString("").
 								Writeln(Warning("Bootstrap script failed, but repository was initialized successfully")).
 								WriteString("   ").
@@ -117,7 +118,7 @@ func newInitCmd() *cobra.Command {
 				w.Writeln(Target("Initialized empty lnk repository")).
 					WriteString("   ").
 					Write(Message{Text: "Location: ", Emoji: "📁"}).
-					Writeln(Colored("~/.config/lnk", ColorGray)).
+					Writeln(Colored(displayPath, ColorGray)).
 					WritelnString("").
 					Writeln(Info("Next steps:")).
 					WriteString("   • Run ").
