@@ -12,6 +12,7 @@ import (
 type OutputConfig struct {
 	Colors bool
 	Emoji  bool
+	Quiet  bool
 }
 
 // Writer provides formatted output with configurable styling
@@ -39,7 +40,7 @@ type Message struct {
 
 // Write outputs a message according to the writer's configuration
 func (w *Writer) Write(msg Message) *Writer {
-	if w.err != nil {
+	if w.err != nil || w.config.Quiet {
 		return w
 	}
 
@@ -85,7 +86,7 @@ func (w *Writer) Writeln(msg Message) *Writer {
 
 // WriteString outputs plain text (no formatting)
 func (w *Writer) WriteString(text string) *Writer {
-	if w.err != nil {
+	if w.err != nil || w.config.Quiet {
 		return w
 	}
 	_, w.err = fmt.Fprint(w.out, text)
@@ -94,7 +95,7 @@ func (w *Writer) WriteString(text string) *Writer {
 
 // WritelnString outputs plain text followed by a newline
 func (w *Writer) WritelnString(text string) *Writer {
-	if w.err != nil {
+	if w.err != nil || w.config.Quiet {
 		return w
 	}
 
@@ -169,7 +170,7 @@ var (
 )
 
 // SetGlobalConfig updates the global output configuration
-func SetGlobalConfig(colors string, emoji bool) error {
+func SetGlobalConfig(colors string, emoji, quiet bool) error {
 	switch colors {
 	case "auto":
 		globalConfig.Colors = isTerminal()
@@ -187,6 +188,7 @@ func SetGlobalConfig(colors string, emoji bool) error {
 	}
 
 	globalConfig.Emoji = emoji
+	globalConfig.Quiet = quiet
 	autoDetected = true
 	return nil
 }

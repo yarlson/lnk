@@ -37,6 +37,9 @@ func (suite *CLITestSuite) SetupTest() {
 	// Set HOME to temp directory for consistent relative path calculation
 	suite.T().Setenv("HOME", tempDir)
 
+	// Clear LNK_HOME so it doesn't override test paths
+	suite.T().Setenv("LNK_HOME", "")
+
 	// Set XDG_CONFIG_HOME to tempDir/.config for config files
 	suite.T().Setenv("XDG_CONFIG_HOME", filepath.Join(tempDir, ".config"))
 

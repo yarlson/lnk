@@ -56,7 +56,7 @@ func TestOutputConfig(t *testing.T) {
 			// Clear NO_COLOR for consistent testing
 			_ = os.Unsetenv("NO_COLOR")
 
-			err := SetGlobalConfig(tt.colors, tt.emoji)
+			err := SetGlobalConfig(tt.colors, tt.emoji, false)
 
 			if tt.expectError && err == nil {
 				t.Errorf("expected error but got none")
@@ -82,7 +82,7 @@ func TestNOCOLOREnvironmentVariable(t *testing.T) {
 	_ = os.Setenv("NO_COLOR", "1")
 	defer func() { _ = os.Unsetenv("NO_COLOR") }()
 
-	err := SetGlobalConfig("auto", true)
+	err := SetGlobalConfig("auto", true, false)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
