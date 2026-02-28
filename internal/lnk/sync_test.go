@@ -530,6 +530,50 @@ func (suite *CoreTestSuite) TestRestoreSymlinks() {
 	}
 }
 
+// TestRestoreSymlinksBackupsExistingFile tests that regular files are backed up, not deleted
+func (suite *CoreTestSuite) TestRestoreSymlinksBackupsExistingFile() {
+	err := suite.lnk.Init()
+	suite.Require().NoError(err)
+
+	// Create a file in the repo (simulating a pull)
+	repoFile := filepath.Join(suite.tempDir, "lnk", ".bashrc")
+	err = os.WriteFile(repoFile, []byte("repo content"), 0644)
+	suite.Require().NoError(err)
+
+	// Create tracking file
+	lnkFile := filepath.Join(suite.tempDir, "lnk", ".lnk")
+	err = os.WriteFile(lnkFile, []byte(".bashrc\n"), 0644)
+	suite.Require().NoError(err)
+
+	// Place a regular file (not a symlink) at the target path
+	homeDir, err := os.UserHomeDir()
+	suite.Require().NoError(err)
+	targetFile := filepath.Join(homeDir, ".bashrc")
+	err = os.WriteFile(targetFile, []byte("original content"), 0644)
+	suite.Require().NoError(err)
+	defer func() {
+		_ = os.Remove(targetFile)
+		_ = os.Remove(targetFile + ".lnk-backup")
+	}()
+
+	// Restore symlinks — should back up the existing file
+	restored, err := suite.lnk.RestoreSymlinks()
+	suite.Require().NoError(err)
+	suite.Len(restored, 1)
+
+	// Target should now be a symlink
+	info, err := os.Lstat(targetFile)
+	suite.Require().NoError(err)
+	suite.Equal(os.ModeSymlink, info.Mode()&os.ModeSymlink)
+
+	// Backup should exist with original content
+	backupFile := targetFile + ".lnk-backup"
+	suite.FileExists(backupFile)
+	content, err := os.ReadFile(backupFile)
+	suite.Require().NoError(err)
+	suite.Equal("original content", string(content))
+}
+
 // TestPush tests push operation error paths
 func (suite *CoreTestSuite) TestPush() {
 	tests := []struct {
