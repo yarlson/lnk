@@ -35,6 +35,9 @@ func (suite *CoreTestSuite) SetupTest() {
 	// Set HOME to temp directory for consistent relative path calculation
 	suite.T().Setenv("HOME", tempDir)
 
+	// Clear LNK_HOME so it doesn't override test paths
+	suite.T().Setenv("LNK_HOME", "")
+
 	// Set XDG_CONFIG_HOME to temp directory
 	suite.T().Setenv("XDG_CONFIG_HOME", tempDir)
 
@@ -214,8 +217,17 @@ func (suite *CoreTestSuite) TestGetRepoPath() {
 		wantSuffix string
 	}{
 		{
-			name: "with XDG_CONFIG_HOME set",
+			name: "LNK_HOME takes highest priority",
 			setupEnv: func() {
+				suite.T().Setenv("LNK_HOME", "/custom/dotfiles")
+				suite.T().Setenv("XDG_CONFIG_HOME", "/xdg/config")
+			},
+			wantSuffix: "/custom/dotfiles",
+		},
+		{
+			name: "with XDG_CONFIG_HOME set and LNK_HOME empty",
+			setupEnv: func() {
+				suite.T().Setenv("LNK_HOME", "")
 				suite.T().Setenv("XDG_CONFIG_HOME", "/custom/config")
 			},
 			wantSuffix: "/custom/config/lnk",
@@ -223,6 +235,7 @@ func (suite *CoreTestSuite) TestGetRepoPath() {
 		{
 			name: "without XDG_CONFIG_HOME defaults to HOME/.config",
 			setupEnv: func() {
+				suite.T().Setenv("LNK_HOME", "")
 				suite.T().Setenv("XDG_CONFIG_HOME", "")
 				suite.T().Setenv("HOME", suite.tempDir)
 			},
