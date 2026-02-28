@@ -162,9 +162,18 @@ func (s *Syncer) RestoreSymlinks() ([]string, error) {
 			return nil, fmt.Errorf("failed to create directory %s: %w", symlinkDir, err)
 		}
 
-		if _, err := os.Lstat(symlinkPath); err == nil {
-			if err := os.RemoveAll(symlinkPath); err != nil {
-				return nil, fmt.Errorf("failed to remove existing item %s: %w", symlinkPath, err)
+		if info, err := os.Lstat(symlinkPath); err == nil {
+			if info.Mode()&os.ModeSymlink == 0 {
+				// Existing item is a regular file or directory — back it up
+				backupPath := symlinkPath + ".lnk-backup"
+				if err := os.Rename(symlinkPath, backupPath); err != nil {
+					return nil, fmt.Errorf("failed to back up existing item %s to %s: %w", symlinkPath, backupPath, err)
+				}
+			} else {
+				// Existing item is a stale symlink — safe to remove
+				if err := os.Remove(symlinkPath); err != nil {
+					return nil, fmt.Errorf("failed to remove existing symlink %s: %w", symlinkPath, err)
+				}
 			}
 		}
 
