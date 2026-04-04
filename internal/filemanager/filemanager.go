@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/yarlson/lnk/internal/fs"
 	"github.com/yarlson/lnk/internal/git"
@@ -114,6 +115,24 @@ func (fm *Manager) Add(filePath string) error {
 		return err
 	}
 
+	return nil
+}
+
+// Create creates s a file or directory then adds to the repository and creates a symlink.
+func (fm *Manager) Create(filePath string) error {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	isDirectory := strings.HasSuffix(filePath, "/")
+	if err := fm.fs.CreateFileOrDirectory(absPath, isDirectory); err != nil {
+		return err
+	}
+
+	if err := fm.Add(absPath); err != nil {
+		return err
+	}
 	return nil
 }
 
