@@ -19,6 +19,7 @@ var (
 	ErrNotManaged      = errors.New("File is not managed by lnk")
 	ErrSymlinkRead     = errors.New("Unable to read symlink. The file may be corrupted or have invalid permissions.")
 	ErrDirCreate       = errors.New("Failed to create directory. Please check permissions and available disk space.")
+	ErrFileCreate      = errors.New("Failed to create directory. Please check permissions and available disk space.")
 	ErrRelativePath    = errors.New("Unable to create symlink due to path configuration issues. Please check file locations.")
 )
 
@@ -84,6 +85,25 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 		return lnkerror.WithPathAndSuggestion(ErrNotManaged, filePath, "use 'lnk add' to manage this file first")
 	}
 
+	return nil
+}
+
+// Create creates a file or directory based on passed flag
+func (fs *FileSystem) CreateFileOrDirectory(filePath string, isDirectory bool) error {
+	if isDirectory {
+		if err := os.MkdirAll(filePath, 0755); err != nil {
+			return lnkerror.WithPath(ErrDirCreate, filePath)
+		}
+	} else {
+		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+			return lnkerror.WithPath(ErrDirCreate, filepath.Dir(filePath))
+		}
+		f, err := os.Create(filePath)
+		if err != nil {
+			return lnkerror.WithPath(ErrFileCreate, filePath)
+		}
+		defer f.Close()
+	}
 	return nil
 }
 
