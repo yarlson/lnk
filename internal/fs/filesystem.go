@@ -88,7 +88,7 @@ func (fs *FileSystem) ValidateSymlinkForRemove(filePath, repoPath string) error 
 	return nil
 }
 
-// Create creates a file or directory based on passed flag
+// CreateFileOrDirectory creates a file or directory
 func (fs *FileSystem) CreateFileOrDirectory(filePath string, isDirectory bool) error {
 	if isDirectory {
 		if err := os.MkdirAll(filePath, 0755); err != nil {
@@ -102,7 +102,9 @@ func (fs *FileSystem) CreateFileOrDirectory(filePath string, isDirectory bool) e
 		if err != nil {
 			return lnkerror.WithPath(ErrFileCreate, filePath)
 		}
-		defer f.Close()
+		if err := f.Close(); err != nil {
+			return lnkerror.WithPath(fmt.Errorf("failed to close file or directory: %w", err), filePath)
+		}
 	}
 	return nil
 }
