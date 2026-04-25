@@ -17,6 +17,11 @@ Conventions and invariants that are enforced by code or test, not aspirational s
 - `--quiet`/`-q` suppresses all `Writer` output; the only signal is the exit code.
 - Auto-detection of TTY happens once on first use; explicit flags pin the config and skip detection.
 
+## Path display
+
+- All paths shown in CLI output that represent where files are stored use `lnk.FormatManagedPath(host, originalPath)` to ensure consistent formatting across commands.
+- `FormatManagedPath` computes the canonical storage location (accounting for host scoping), then displays it home-relative (with `~`) or `/`-stripped for paths outside `$HOME`.
+
 ## Repo-path resolution
 
 - Order is fixed: `LNK_HOME` env > `XDG_CONFIG_HOME/lnk` > `~/.config/lnk`. If the home directory is unavailable, the path falls back to `./lnk`.

@@ -29,7 +29,7 @@ Re-exported from the facade for backwards compatibility:
 
 - Sentinel errors (`ErrAlreadyManaged`, `ErrNotInitialized`, etc.) — re-exported from `lnkerror`.
 - Type aliases: `ProgressCallback = filemanager.ProgressCallback`, `StatusInfo = syncer.StatusInfo`, `DoctorResult = doctor.Result`.
-- Helpers: `DisplayPath` (replaces `$HOME` with `~`), `GetCurrentHostname`, `GetRepoPath`.
+- Helpers: `DisplayPath` (replaces `$HOME` with `~`), `GetCurrentHostname`, `GetRepoPath`, `FormatManagedPath` (formats the display path where a file is/will be stored for a given host).
 
 ## Collaborator responsibilities
 

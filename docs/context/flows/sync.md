@@ -12,7 +12,7 @@ All sync operations require the repo path to be a Git repository; otherwise they
 4. Counts ahead via `rev-list --count <upstream>..HEAD` (falls back to all-local-commits if the upstream branch doesn't exist remotely).
 5. Counts behind via `rev-list --count HEAD..<upstream>`. Behind is always 0 when there is no upstream.
 
-`StatusInfo{Ahead, Behind, Remote, Dirty}` is then rendered by three branches in `cmd/status.go`: dirty, up-to-date, or ahead/behind.
+`StatusInfo{Ahead, Behind, Remote, Dirty}` is then rendered by three branches in `cmd/status.go`: dirty, up-to-date, or ahead/behind. When dirty, the status display references the actual repo path (via `lnk.DisplayPath(lnk.GetRepoPath())`) and suggests running git operations within it, so messages adapt when the repo is in a custom location via `LNK_HOME` or `XDG_CONFIG_HOME`.
 
 ## Diff (`lnk diff`)
 
