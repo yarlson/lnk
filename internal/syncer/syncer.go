@@ -76,6 +76,16 @@ func (s *Syncer) Diff(color bool) (string, error) {
 	return s.git.Diff(color)
 }
 
+// HasDiff reports whether the working tree has uncommitted diff content
+// without materializing the patch.
+func (s *Syncer) HasDiff() (bool, error) {
+	if !s.git.IsGitRepository() {
+		return false, lnkerror.WithSuggestion(lnkerror.ErrNotInitialized, "run 'lnk init' first")
+	}
+
+	return s.git.HasDiff()
+}
+
 // Push stages all changes and creates a sync commit, then pushes to remote.
 func (s *Syncer) Push(message string) error {
 	if !s.git.IsGitRepository() {

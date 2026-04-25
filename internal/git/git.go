@@ -537,6 +537,25 @@ func (g *Git) Diff(color bool) (string, error) {
 	return string(output), nil
 }
 
+// HasDiff reports whether the working tree has uncommitted diff content,
+// using `git diff --quiet` so the patch is never materialized.
+func (g *Git) HasDiff() (bool, error) {
+	cmd := g.execGitCommand(shortTimeout, "diff", "--quiet")
+
+	err := cmd.Run()
+	if err == nil {
+		return false, nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return false, lnkerror.Wrap(ErrGitTimeout)
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return true, nil
+	}
+	return false, lnkerror.Wrap(ErrDiff)
+}
+
 // AddAll stages all changes in the repository
 func (g *Git) AddAll() error {
 	cmd := g.execGitCommand(shortTimeout, "add", "-A")

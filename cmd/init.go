@@ -79,7 +79,8 @@ func newInitCmd() *cobra.Command {
 							return err
 						}
 
-						if err := l.RunBootstrapScript(scriptPath, os.Stdout, os.Stderr, os.Stdin); err != nil {
+						scriptOut, scriptErr := bootstrapWriters(cmd, w)
+					if err := l.RunBootstrapScript(scriptPath, scriptOut, scriptErr, os.Stdin); err != nil {
 							w.WritelnString("").
 								Writeln(Warning("Bootstrap script failed, but repository was initialized successfully")).
 								WriteString("   ").

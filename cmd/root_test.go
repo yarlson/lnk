@@ -796,6 +796,34 @@ touch bootstrap-ran.txt
 	suite.FileExists(markerFile)
 }
 
+// TestBootstrapCommand_QuietSuppressesScriptOutput verifies that --quiet
+// silences not only the framing output but also stdout/stderr from the
+// bootstrap script itself, while still actually executing it.
+func (suite *CLITestSuite) TestBootstrapCommand_QuietSuppressesScriptOutput() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+	suite.stderr.Reset()
+
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	bootstrapScript := filepath.Join(lnkDir, "bootstrap.sh")
+	scriptContent := `#!/bin/bash
+echo "BOOT_STDOUT_LEAK"
+echo "BOOT_STDERR_LEAK" >&2
+touch quiet-bootstrap-ran.txt
+`
+	err = os.WriteFile(bootstrapScript, []byte(scriptContent), 0755)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("--quiet", "bootstrap")
+	suite.NoError(err)
+	suite.Empty(suite.stdout.String(), "--quiet must suppress framing and script stdout")
+	suite.NotContains(suite.stderr.String(), "BOOT_STDERR_LEAK", "--quiet must suppress script stderr")
+
+	// Marker proves the script actually executed even with --quiet.
+	suite.FileExists(filepath.Join(lnkDir, "quiet-bootstrap-ran.txt"))
+}
+
 func (suite *CLITestSuite) TestInitWithBootstrap() {
 	// Create a temporary remote repository with bootstrap script
 	remoteDir := filepath.Join(suite.tempDir, "remote")

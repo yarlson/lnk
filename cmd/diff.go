@@ -17,9 +17,10 @@ func newDiffCmd() *cobra.Command {
 			l := lnk.NewLnk()
 			w := GetWriter(cmd)
 
-			// In quiet mode, skip computing and displaying diff output entirely.
+			// In quiet mode, avoid materializing the patch — only validate the
+			// repo and probe for changes via `git diff --quiet`.
 			if w.Quiet() {
-				_, err := l.Diff(false)
+				_, err := l.HasDiff()
 				return err
 			}
 

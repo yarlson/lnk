@@ -124,6 +124,7 @@ func (l *Lnk) RemoveForce(filePath string) error { return l.files.RemoveForce(fi
 
 func (l *Lnk) Status() (*StatusInfo, error)           { return l.syncer.Status() }
 func (l *Lnk) Diff(color bool) (string, error)        { return l.syncer.Diff(color) }
+func (l *Lnk) HasDiff() (bool, error)                 { return l.syncer.HasDiff() }
 func (l *Lnk) Push(message string) error              { return l.syncer.Push(message) }
 func (l *Lnk) Pull() (*RestoreInfo, error)            { return l.syncer.Pull() }
 func (l *Lnk) List() ([]string, error)                { return l.syncer.List() }
