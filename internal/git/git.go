@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -377,18 +378,28 @@ type StatusInfo struct {
 	Dirty  bool
 }
 
-// GetStatus returns the repository status relative to remote
+// GetStatus returns the repository status relative to remote.
+// When no remote is configured, returns a StatusInfo with Remote="" and
+// Behind=0; Ahead reflects the number of local commits and Dirty reflects
+// the working tree state, so callers can still report useful local state.
 func (g *Git) GetStatus() (*StatusInfo, error) {
-	// Check if we have a remote
-	_, err := g.GetRemoteInfo()
-	if err != nil {
-		return nil, err
-	}
-
 	// Check for uncommitted changes
 	dirty, err := g.HasChanges()
 	if err != nil {
 		return nil, lnkerror.WithSuggestion(ErrUncommitted, "verify your git repository is valid")
+	}
+
+	// Check if we have a remote — if not, fall back to local-only status.
+	if _, err := g.GetRemoteInfo(); err != nil {
+		if errors.Is(err, ErrNoRemote) {
+			return &StatusInfo{
+				Ahead:  g.getLocalCommitCount(),
+				Behind: 0,
+				Remote: "",
+				Dirty:  dirty,
+			}, nil
+		}
+		return nil, err
 	}
 
 	// Get the remote tracking branch
@@ -417,6 +428,25 @@ func (g *Git) GetStatus() (*StatusInfo, error) {
 		Remote: remoteBranch,
 		Dirty:  dirty,
 	}, nil
+}
+
+// getLocalCommitCount returns the total number of commits on HEAD, or 0 if
+// there are no commits yet (fresh repo).
+func (g *Git) getLocalCommitCount() int {
+	cmd := g.execGitCommand(shortTimeout, "rev-list", "--count", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	count := strings.TrimSpace(string(output))
+	if count == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(count)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // getAheadCount returns how many commits ahead of remote

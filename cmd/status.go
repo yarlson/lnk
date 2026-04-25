@@ -22,6 +22,11 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
+			if status.Remote == "" {
+				displayNoRemoteStatus(cmd, status)
+				return nil
+			}
+
 			if status.Dirty {
 				displayDirtyStatus(cmd, status)
 				return nil
@@ -136,4 +141,40 @@ func getCommitText(count int) string {
 		return "commit"
 	}
 	return "commits"
+}
+
+// displayNoRemoteStatus renders status for a repository that has no remote
+// configured. We still report local state (dirty / clean, local commit count)
+// and guide the user toward adding a remote.
+func displayNoRemoteStatus(cmd *cobra.Command, status *lnk.StatusInfo) {
+	w := GetWriter(cmd)
+
+	repoDisplay := lnk.DisplayPath(lnk.GetRepoPath())
+
+	if status.Dirty {
+		w.Writeln(Warning("Repository has uncommitted changes")).
+			WriteString("   ").
+			Writeln(Message{Text: "No remote configured", Emoji: "📡", Color: ColorGray})
+	} else {
+		w.Writeln(Success("Working tree is clean")).
+			WriteString("   ").
+			Writeln(Message{Text: "No remote configured", Emoji: "📡", Color: ColorGray})
+	}
+
+	if status.Ahead > 0 {
+		commitText := getCommitText(status.Ahead)
+		w.WriteString("   ").
+			Writeln(Message{Text: fmt.Sprintf("%d local %s (no remote to compare against)", status.Ahead, commitText), Emoji: "⬆️", Color: ColorBrightYellow, Bold: true})
+	}
+
+	w.WritelnString("").
+		Write(Info("Add a remote to enable ")).
+		Write(Bold("lnk push")).
+		WriteString(" / ").
+		Write(Bold("lnk pull")).
+		WritelnString("").
+		WriteString("   ").
+		Write(Bold("git remote add origin <url>")).
+		WriteString(" in ").
+		Writeln(Colored(repoDisplay, ColorCyan))
 }

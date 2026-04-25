@@ -37,6 +37,10 @@ type ProgressCallback = filemanager.ProgressCallback
 // StatusInfo contains repository sync status information.
 type StatusInfo = syncer.StatusInfo
 
+// RestoreInfo reports symlink restoration results, including which files
+// were renamed to <path>.lnk-backup to preserve user data.
+type RestoreInfo = syncer.RestoreInfo
+
 // DoctorResult contains the results of a doctor scan or execution.
 type DoctorResult = doctor.Result
 
@@ -118,13 +122,13 @@ func (l *Lnk) RemoveForce(filePath string) error { return l.files.RemoveForce(fi
 
 // --- Sync delegates ---
 
-func (l *Lnk) Status() (*StatusInfo, error)       { return l.syncer.Status() }
-func (l *Lnk) Diff(color bool) (string, error)    { return l.syncer.Diff(color) }
-func (l *Lnk) Push(message string) error          { return l.syncer.Push(message) }
-func (l *Lnk) Pull() ([]string, error)            { return l.syncer.Pull() }
-func (l *Lnk) List() ([]string, error)            { return l.syncer.List() }
-func (l *Lnk) GetCommits() ([]string, error)      { return l.syncer.GetCommits() }
-func (l *Lnk) RestoreSymlinks() ([]string, error) { return l.syncer.RestoreSymlinks() }
+func (l *Lnk) Status() (*StatusInfo, error)           { return l.syncer.Status() }
+func (l *Lnk) Diff(color bool) (string, error)        { return l.syncer.Diff(color) }
+func (l *Lnk) Push(message string) error              { return l.syncer.Push(message) }
+func (l *Lnk) Pull() (*RestoreInfo, error)            { return l.syncer.Pull() }
+func (l *Lnk) List() ([]string, error)                { return l.syncer.List() }
+func (l *Lnk) GetCommits() ([]string, error)          { return l.syncer.GetCommits() }
+func (l *Lnk) RestoreSymlinks() (*RestoreInfo, error) { return l.syncer.RestoreSymlinks() }
 
 // --- Bootstrap delegates ---
 

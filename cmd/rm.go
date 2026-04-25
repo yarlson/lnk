@@ -15,8 +15,11 @@ func newRemoveCmd() *cobra.Command {
 		Short: "🗑️ Remove a file from lnk management",
 		Long: `Removes a symlink and restores the original file from the lnk repository.
 
-Use --force to remove a file from tracking even if the symlink no longer exists
-(e.g., if you accidentally deleted the symlink without using lnk rm).`,
+Use --force for tracking cleanup only: it removes the entry from the .lnk index
+and the stored file from the repo without restoring anything in your home
+directory. This is intended for cases where the symlink is already missing
+(e.g., you deleted it manually) so the regular rm flow cannot run. --force
+does NOT recreate or move any file back into place.`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -39,7 +42,7 @@ Use --force to remove a file from tracking even if the symlink no longer exists
 					w.Writeln(Message{Text: fmt.Sprintf("Force removed %s from lnk", basename), Emoji: "🗑️", Bold: true})
 				}
 				w.WriteString("   ").
-					Writeln(Message{Text: "File removed from tracking", Emoji: "📋"})
+					Writeln(Message{Text: "Tracking cleanup only — no file was restored to your home directory", Emoji: "📋"})
 
 				return w.Err()
 			}
@@ -67,6 +70,6 @@ Use --force to remove a file from tracking even if the symlink no longer exists
 	}
 
 	cmd.Flags().StringP("host", "H", "", "Remove file from specific host configuration (default: common configuration)")
-	cmd.Flags().BoolP("force", "f", false, "Force removal from tracking even if symlink is missing")
+	cmd.Flags().BoolP("force", "f", false, "Tracking cleanup only: drop the entry and stored file without restoring anything in your home directory")
 	return cmd
 }

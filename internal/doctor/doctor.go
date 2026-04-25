@@ -14,9 +14,13 @@ import (
 )
 
 // Result contains the results of a doctor scan or execution.
+// BackedUp is populated only by Fix (not Preview): it lists managed items
+// whose pre-existing real files were renamed to <path>.lnk-backup during
+// the symlink restoration step.
 type Result struct {
 	InvalidEntries []string
 	BrokenSymlinks []string
+	BackedUp       []string
 }
 
 // HasIssues returns true if any issues were found.
@@ -85,9 +89,11 @@ func (d *Checker) Fix() (*Result, error) {
 
 	// Fix broken symlinks via the syncer's RestoreSymlinks.
 	if len(result.BrokenSymlinks) > 0 {
-		if _, err := d.syncer.RestoreSymlinks(); err != nil {
+		restoreInfo, err := d.syncer.RestoreSymlinks()
+		if err != nil {
 			return nil, fmt.Errorf("failed to restore symlinks: %w", err)
 		}
+		result.BackedUp = restoreInfo.BackedUp
 	}
 
 	// Remove invalid entries from .lnk file.

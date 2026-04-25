@@ -164,10 +164,12 @@ func (suite *CLITestSuite) TestStatusCommand() {
 	suite.Require().NoError(err)
 	suite.stdout.Reset()
 
-	// Test status without remote - should fail
+	// Status without a remote should still succeed and report local state.
 	err = suite.runCommand("status")
-	suite.Error(err)
-	suite.Contains(err.Error(), "No remote repository is configured")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "No remote configured")
+	suite.Contains(output, "git remote add origin")
 }
 
 func (suite *CLITestSuite) TestListCommand() {
@@ -2811,6 +2813,174 @@ func (suite *CLITestSuite) TestListAll_HostOnlyEmitsHint() {
 	suite.Contains(output, "Host: work")
 	suite.Contains(output, "lnk pull --host work")
 	suite.Contains(output, "(no files)", "Empty common section should still render")
+}
+
+// TASK5: Safety visibility & no-remote status
+
+// TestStatusCommand_NoRemote_DirtyShowsLocalState verifies that running
+// `lnk status` against a repo with no remote configured still reports the
+// dirty state and points the user at the right next step (adding a remote).
+func (suite *CLITestSuite) TestStatusCommand_NoRemote_DirtyShowsLocalState() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Make the working tree dirty by editing the managed file.
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("status")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Repository has uncommitted changes")
+	suite.Contains(output, "No remote configured")
+	suite.Contains(output, "git remote add origin")
+}
+
+// TestStatusCommand_NoRemote_CleanShowsLocalCommits verifies that a clean
+// repo with local commits but no remote reports those commits as local-only
+// instead of failing.
+func (suite *CLITestSuite) TestStatusCommand_NoRemote_CleanShowsLocalCommits() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	err = suite.runCommand("status")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Working tree is clean")
+	suite.Contains(output, "No remote configured")
+	suite.Contains(output, "1 local commit")
+	suite.Contains(output, "git remote add origin")
+}
+
+// TestRemoveCommand_ForceMessagingExplainsTrackingCleanup verifies that the
+// success output for `rm --force` makes it clear nothing was restored to the
+// user's home directory — this is tracking cleanup, not a normal restore.
+func (suite *CLITestSuite) TestRemoveCommand_ForceMessagingExplainsTrackingCleanup() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+
+	// Simulate user mistake: delete the symlink without `lnk rm`.
+	err = os.Remove(testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	err = suite.runCommand("rm", "--force", testFile)
+	suite.Require().NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Force removed")
+	suite.Contains(output, "Tracking cleanup only")
+	suite.Contains(output, "no file was restored")
+	suite.NotContains(output, "Original file restored")
+}
+
+// TestRemoveCommand_HelpText_ExplainsForceIsTrackingCleanup verifies the
+// command help text distinguishes --force as tracking cleanup, so users do
+// not expect normal-restore semantics.
+func (suite *CLITestSuite) TestRemoveCommand_HelpText_ExplainsForceIsTrackingCleanup() {
+	err := suite.runCommand("rm", "--help")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "tracking cleanup")
+	suite.Contains(output, "does NOT recreate")
+}
+
+// TestPullCommand_ReportsBackup verifies that `lnk pull` reports when a
+// pre-existing real file at the symlink target was renamed to .lnk-backup
+// instead of being silently overwritten.
+func (suite *CLITestSuite) TestPullCommand_ReportsBackup() {
+	// Set up a remote we can pull from.
+	remoteDir := filepath.Join(suite.tempDir, "remote.git")
+	suite.Require().NoError(os.MkdirAll(remoteDir, 0755))
+	cmd := exec.Command("git", "init", "--bare", "--initial-branch=main")
+	cmd.Dir = remoteDir
+	suite.Require().NoError(cmd.Run())
+
+	// Init the lnk repo with that remote and add a managed file so
+	// the remote has the .lnk index and stored content to pull back.
+	err := suite.runCommand("init", "--remote", remoteDir)
+	suite.Require().NoError(err)
+
+	managed := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(managed, []byte("export PATH"), 0644))
+	err = suite.runCommand("add", managed)
+	suite.Require().NoError(err)
+	err = suite.runCommand("push", "seed")
+	suite.Require().NoError(err)
+
+	// Replace the symlink with a real file so RestoreSymlinks must back it up.
+	suite.Require().NoError(os.Remove(managed))
+	suite.Require().NoError(os.WriteFile(managed, []byte("preexisting"), 0644))
+	defer func() {
+		_ = os.Remove(managed + ".lnk-backup")
+	}()
+	suite.stdout.Reset()
+
+	err = suite.runCommand("pull")
+	suite.Require().NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Backed up 1 existing file to .lnk-backup")
+	suite.Contains(output, ".bashrc")
+	suite.Contains(output, ".lnk-backup")
+
+	// Backup file must exist with original content.
+	backup := managed + ".lnk-backup"
+	suite.FileExists(backup)
+	content, readErr := os.ReadFile(backup)
+	suite.Require().NoError(readErr)
+	suite.Equal("preexisting", string(content))
+}
+
+// TestDoctorCommand_ReportsBackup verifies that `lnk doctor` reports when
+// fixing a broken symlink required renaming a pre-existing real file to
+// .lnk-backup.
+func (suite *CLITestSuite) TestDoctorCommand_ReportsBackup() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+
+	managed := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(managed, []byte("export PATH"), 0644))
+	err = suite.runCommand("add", managed)
+	suite.Require().NoError(err)
+
+	// Replace the symlink with a real file so doctor must back it up.
+	suite.Require().NoError(os.Remove(managed))
+	suite.Require().NoError(os.WriteFile(managed, []byte("preexisting"), 0644))
+	defer func() {
+		_ = os.Remove(managed + ".lnk-backup")
+	}()
+	suite.stdout.Reset()
+
+	err = suite.runCommand("doctor")
+	suite.Require().NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Restored 1 broken symlink")
+	suite.Contains(output, "Backed up 1 existing file to .lnk-backup")
+	suite.Contains(output, ".bashrc")
+
+	// Verify the backup file actually exists.
+	suite.FileExists(managed + ".lnk-backup")
 }
 
 func TestCLISuite(t *testing.T) {

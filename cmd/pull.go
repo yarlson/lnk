@@ -20,21 +20,21 @@ func newPullCmd() *cobra.Command {
 			lnk := lnk.NewLnk(lnk.WithHost(host))
 			w := GetWriter(cmd)
 
-			restored, err := lnk.Pull()
+			result, err := lnk.Pull()
 			if err != nil {
 				return err
 			}
 
-			if len(restored) > 0 {
-				var successMsg string
-				if host != "" {
-					successMsg = fmt.Sprintf("Successfully pulled changes (host: %s)", host)
-				} else {
-					successMsg = "Successfully pulled changes"
-				}
+			var successMsg string
+			if host != "" {
+				successMsg = fmt.Sprintf("Successfully pulled changes (host: %s)", host)
+			} else {
+				successMsg = "Successfully pulled changes"
+			}
 
-				symlinkText := fmt.Sprintf("Restored %d symlink", len(restored))
-				if len(restored) > 1 {
+			if len(result.Restored) > 0 {
+				symlinkText := fmt.Sprintf("Restored %d symlink", len(result.Restored))
+				if len(result.Restored) > 1 {
 					symlinkText += "s"
 				}
 				symlinkText += ":"
@@ -43,22 +43,17 @@ func newPullCmd() *cobra.Command {
 					WriteString("   ").
 					Writeln(Link(symlinkText))
 
-				for _, file := range restored {
+				for _, file := range result.Restored {
 					w.WriteString("      ").
 						Writeln(Sparkles(file))
 				}
+
+				writeBackupNotice(w, result.BackedUp)
 
 				w.WritelnString("").
 					WriteString("   ").
 					Writeln(Message{Text: "Your dotfiles are synced and ready!", Emoji: "🎉"})
 			} else {
-				var successMsg string
-				if host != "" {
-					successMsg = fmt.Sprintf("Successfully pulled changes (host: %s)", host)
-				} else {
-					successMsg = "Successfully pulled changes"
-				}
-
 				w.Writeln(Message{Text: successMsg, Emoji: "⬇️", Color: ColorBrightGreen, Bold: true}).
 					WriteString("   ").
 					Writeln(Success("All symlinks already in place")).
@@ -72,4 +67,29 @@ func newPullCmd() *cobra.Command {
 
 	cmd.Flags().StringP("host", "H", "", "Pull and restore symlinks for specific host (default: common configuration)")
 	return cmd
+}
+
+// writeBackupNotice renders a section listing files that were renamed to
+// <path>.lnk-backup so the user can decide what to do with them. No-op when
+// no backups occurred.
+func writeBackupNotice(w *Writer, backedUp []string) {
+	if len(backedUp) == 0 {
+		return
+	}
+
+	noun := "file"
+	if len(backedUp) > 1 {
+		noun = "files"
+	}
+
+	w.WritelnString("").
+		WriteString("   ").
+		Writeln(Warning(fmt.Sprintf("Backed up %d existing %s to .lnk-backup:", len(backedUp), noun)))
+
+	for _, file := range backedUp {
+		w.WriteString("      ").
+			Write(Plain("~/" + file)).
+			WriteString(" → ").
+			Writeln(Colored("~/"+file+".lnk-backup", ColorYellow))
+	}
 }

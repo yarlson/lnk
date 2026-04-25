@@ -13,11 +13,19 @@ import (
 )
 
 // StatusInfo contains repository sync status information.
+// Remote is empty when no remote is configured; in that case Behind is always 0.
 type StatusInfo struct {
 	Ahead  int
 	Behind int
 	Remote string
 	Dirty  bool
+}
+
+// RestoreInfo reports which managed items had symlinks restored and which
+// pre-existing real files were renamed to <path>.lnk-backup along the way.
+type RestoreInfo struct {
+	Restored []string
+	BackedUp []string
 }
 
 // Syncer handles synchronization operations.
@@ -93,7 +101,7 @@ func (s *Syncer) Push(message string) error {
 }
 
 // Pull fetches changes from remote and restores symlinks as needed.
-func (s *Syncer) Pull() ([]string, error) {
+func (s *Syncer) Pull() (*RestoreInfo, error) {
 	if !s.git.IsGitRepository() {
 		return nil, lnkerror.WithSuggestion(lnkerror.ErrNotInitialized, "run 'lnk init' first")
 	}
@@ -102,12 +110,12 @@ func (s *Syncer) Pull() ([]string, error) {
 		return nil, err
 	}
 
-	restored, err := s.RestoreSymlinks()
+	info, err := s.RestoreSymlinks()
 	if err != nil {
 		return nil, fmt.Errorf("failed to restore symlinks: %w", err)
 	}
 
-	return restored, nil
+	return info, nil
 }
 
 // List returns the list of files and directories currently managed by lnk.
@@ -130,8 +138,10 @@ func (s *Syncer) GetCommits() ([]string, error) {
 }
 
 // RestoreSymlinks finds all managed items and ensures they have proper symlinks.
-func (s *Syncer) RestoreSymlinks() ([]string, error) {
-	var restored []string
+// Reports both which items had a symlink (re)created and which pre-existing
+// real files were renamed to <path>.lnk-backup along the way.
+func (s *Syncer) RestoreSymlinks() (*RestoreInfo, error) {
+	info := &RestoreInfo{}
 
 	managedItems, err := s.tracker.GetManagedItems()
 	if err != nil {
@@ -162,13 +172,14 @@ func (s *Syncer) RestoreSymlinks() ([]string, error) {
 			return nil, fmt.Errorf("failed to create directory %s: %w", symlinkDir, err)
 		}
 
-		if info, err := os.Lstat(symlinkPath); err == nil {
-			if info.Mode()&os.ModeSymlink == 0 {
+		if existing, err := os.Lstat(symlinkPath); err == nil {
+			if existing.Mode()&os.ModeSymlink == 0 {
 				// Existing item is a regular file or directory — back it up
 				backupPath := symlinkPath + ".lnk-backup"
 				if err := os.Rename(symlinkPath, backupPath); err != nil {
 					return nil, fmt.Errorf("failed to back up existing item %s to %s: %w", symlinkPath, backupPath, err)
 				}
+				info.BackedUp = append(info.BackedUp, relativePath)
 			} else {
 				// Existing item is a stale symlink — safe to remove
 				if err := os.Remove(symlinkPath); err != nil {
@@ -181,10 +192,10 @@ func (s *Syncer) RestoreSymlinks() ([]string, error) {
 			return nil, err
 		}
 
-		restored = append(restored, relativePath)
+		info.Restored = append(info.Restored, relativePath)
 	}
 
-	return restored, nil
+	return info, nil
 }
 
 // IsValidSymlink checks if the given path is a symlink pointing to the expected target.

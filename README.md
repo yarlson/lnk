@@ -63,7 +63,7 @@ lnk add --dry-run ~/.tmux.conf            # preview first
 ### Sync
 
 ```bash
-lnk status                                # what changed
+lnk status                                # what changed (works even without remote)
 lnk diff                                  # uncommitted changes
 lnk diff --quiet                          # exit code only, no output
 lnk diff --colors always                  # force color output (useful in scripts/redirects)
@@ -72,12 +72,16 @@ lnk pull                                  # pull & restore symlinks
 lnk pull --host work                      # pull host-specific config
 ```
 
+`status` works without a remote configured — it shows local state (dirty/clean, unpushed commits) and guides you to add a remote.
+
 ### Remove
 
 ```bash
 lnk rm ~/.vimrc                           # moves file back, removes symlink
-lnk rm --force ~/.bashrc                  # clean up if symlink already gone
+lnk rm --force ~/.bashrc                  # tracking cleanup only (no file restoration)
 ```
+
+`--force` is for cleanup when the symlink is already gone (e.g., you deleted it manually). It removes the entry from `.lnk` and the stored file from the repo, but does **not** restore anything to your home directory. Use normal `lnk rm` for a full removal with restoration.
 
 ### List
 
@@ -93,6 +97,8 @@ lnk list --all                            # everything
 lnk doctor --dry-run                      # preview issues
 lnk doctor                                # fix broken symlinks & stale entries
 ```
+
+When restoring symlinks, if a real file exists at the target location (not a symlink), it will be renamed to `<path>.lnk-backup` to preserve your data before the symlink is created. Check for `.lnk-backup` files after running `doctor` or `pull` if you expect them.
 
 ### Bootstrap
 
