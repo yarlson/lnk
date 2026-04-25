@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/yarlson/lnk/internal/lnk"
+	error2 "github.com/yarlson/lnk/internal/lnkerror"
 )
 
 type CLITestSuite struct {
@@ -2551,6 +2553,99 @@ func (suite *CLITestSuite) TestRecursiveAdd_SameBasenameMultipleDirs() {
 	infoB, err := os.Lstat(configFileB)
 	suite.NoError(err)
 	suite.Equal(os.ModeSymlink, infoB.Mode()&os.ModeSymlink, "config.json in app-b should be symlink")
+}
+
+// TestDryRunDuplicateError_NoEmbeddedFormatting verifies that the duplicate-path
+// error from `add --dry-run` carries no embedded ANSI/emoji and is shaped as a
+// structured lnkerror so DisplayError can render it like other CLI errors.
+func (suite *CLITestSuite) TestDryRunDuplicateError_NoEmbeddedFormatting() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin"), 0644))
+	suite.Require().NoError(suite.runCommand("add", testFile))
+	suite.stdout.Reset()
+
+	err = suite.runCommand("add", "--dry-run", testFile)
+	suite.Require().Error(err)
+
+	msg := err.Error()
+	suite.NotContains(msg, "\033[", "Error must not embed ANSI color codes")
+	suite.NotContains(msg, "❌", "Error must not embed emoji")
+	suite.Contains(msg, "already managed", "Error must still convey duplicate condition")
+
+	var lnkErr *error2.Error
+	suite.Require().True(errors.As(err, &lnkErr), "Error must be a structured lnkerror")
+	suite.Equal(error2.ErrAlreadyManaged, lnkErr.Err, "Should wrap ErrAlreadyManaged sentinel")
+	suite.NotEmpty(lnkErr.Path, "Structured error should carry the offending path")
+}
+
+// TestDiffCommand_ColorsNever verifies that --colors never produces no ANSI
+// escape codes in diff output even when there are uncommitted changes.
+func (suite *CLITestSuite) TestDiffCommand_ColorsNever() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin"), 0644))
+	suite.Require().NoError(suite.runCommand("add", testFile))
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin\nEDITOR=vim"), 0644))
+	suite.stdout.Reset()
+
+	err = suite.runCommand("--colors", "never", "diff")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "EDITOR=vim", "Diff should still include changed content")
+	suite.NotContains(output, "\033[", "--colors never must not emit ANSI color codes")
+}
+
+// TestDiffCommand_ColorsAlways verifies that --colors always forces ANSI color
+// codes into the diff output even when stdout is not a terminal.
+func (suite *CLITestSuite) TestDiffCommand_ColorsAlways() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin"), 0644))
+	suite.Require().NoError(suite.runCommand("add", testFile))
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin\nEDITOR=vim"), 0644))
+	suite.stdout.Reset()
+
+	err = suite.runCommand("--colors", "always", "diff")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "EDITOR=vim", "Diff should include changed content")
+	suite.Contains(output, "\033[", "--colors always must emit ANSI color codes")
+}
+
+// TestDiffCommand_QuietSuppressesOutput verifies that --quiet suppresses all
+// diff output (both the no-changes message and the diff body).
+func (suite *CLITestSuite) TestDiffCommand_QuietSuppressesOutput() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin"), 0644))
+	suite.Require().NoError(suite.runCommand("add", testFile))
+	suite.stdout.Reset()
+
+	// After add the working tree is clean — exercise the "no changes" branch.
+	err = suite.runCommand("--quiet", "diff")
+	suite.NoError(err)
+	suite.Empty(suite.stdout.String(), "--quiet must suppress 'no changes' message")
+
+	// Now introduce uncommitted changes and exercise the diff-body branch.
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin\nEDITOR=vim"), 0644))
+	suite.stdout.Reset()
+
+	err = suite.runCommand("--quiet", "diff")
+	suite.NoError(err)
+	suite.Empty(suite.stdout.String(), "--quiet must suppress diff output entirely")
 }
 
 func TestCLISuite(t *testing.T) {

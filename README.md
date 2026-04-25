@@ -65,6 +65,8 @@ lnk add --dry-run ~/.tmux.conf            # preview first
 ```bash
 lnk status                                # what changed
 lnk diff                                  # uncommitted changes
+lnk diff --quiet                          # exit code only, no output
+lnk diff --colors always                  # force color output (useful in scripts/redirects)
 lnk push "updated vim config"             # commit & push
 lnk pull                                  # pull & restore symlinks
 lnk pull --host work                      # pull host-specific config
@@ -125,6 +127,16 @@ That's it. Bootstrap runs automatically, symlinks get restored, you're working.
 | `pull [--host H]`                                  | Pull and restore symlinks                   |
 | `doctor [--host H] [--dry-run]`                    | Find and fix repo health issues             |
 | `bootstrap`                                        | Run bootstrap.sh from repo                  |
+
+## Global Options
+
+Available with all commands:
+
+| Option                       | Default | What it does                                                  |
+| ---------------------------- | ------- | ------------------------------------------------------------- |
+| `--colors auto\|always\|never` | `auto`    | Control color output (auto: based on terminal detection)     |
+| `--emoji`, `--no-emoji`        | enabled | Enable/disable emoji in output                               |
+| `--quiet` or `-q`              | off     | Suppress all output (useful in scripts, exit code only)       |
 
 ## Why lnk over alternatives
 

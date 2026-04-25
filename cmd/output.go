@@ -202,6 +202,16 @@ func isTerminal() bool {
 	return (fileInfo.Mode() & os.ModeCharDevice) != 0
 }
 
+// Colors reports whether color output is enabled for this writer.
+func (w *Writer) Colors() bool {
+	return w.config.Colors
+}
+
+// Quiet reports whether quiet mode is enabled for this writer.
+func (w *Writer) Quiet() bool {
+	return w.config.Quiet
+}
+
 // IsTerminal reports whether the writer's underlying output is a terminal.
 func (w *Writer) IsTerminal() bool {
 	f, ok := w.out.(*os.File)

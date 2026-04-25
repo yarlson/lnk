@@ -362,7 +362,7 @@ func (fm *Manager) PreviewAdd(paths []string, recursive bool) ([]string, error) 
 			return nil, fmt.Errorf("failed to get managed items: %w", err)
 		}
 		if slices.Contains(managedItems, relativePath) {
-			return nil, fmt.Errorf("\u274c File is already managed by lnk: \033[31m%s\033[0m", relativePath)
+			return nil, lnkerror.WithPath(lnkerror.ErrAlreadyManaged, relativePath)
 		}
 
 		validFiles = append(validFiles, filePath)

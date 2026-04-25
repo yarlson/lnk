@@ -15,16 +15,18 @@ func newDiffCmd() *cobra.Command {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			l := lnk.NewLnk()
+			w := GetWriter(cmd)
 
-			// Determine color mode based on terminal detection
-			useColor := isTerminal()
-
-			output, err := l.Diff(useColor)
-			if err != nil {
+			// In quiet mode, skip computing and displaying diff output entirely.
+			if w.Quiet() {
+				_, err := l.Diff(false)
 				return err
 			}
 
-			w := GetWriter(cmd)
+			output, err := l.Diff(w.Colors())
+			if err != nil {
+				return err
+			}
 
 			if output == "" {
 				w.Writeln(Success("No uncommitted changes")).
@@ -33,9 +35,8 @@ func newDiffCmd() *cobra.Command {
 				return w.Err()
 			}
 
-			// Write diff output directly to command's stdout
-			cmd.Print(output)
-			return nil
+			w.WriteString(output)
+			return w.Err()
 		},
 	}
 }
