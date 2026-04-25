@@ -2648,6 +2648,171 @@ func (suite *CLITestSuite) TestDiffCommand_QuietSuppressesOutput() {
 	suite.Empty(suite.stdout.String(), "--quiet must suppress diff output entirely")
 }
 
+// setupRemoteWithFiles creates a bare remote and seeds it with the given files
+// (path -> content). Returns the bare remote path so callers can pass it to
+// `init -r`. Used by the host-flow guidance tests.
+func (suite *CLITestSuite) setupRemoteWithFiles(label string, files map[string]string) string {
+	remoteDir := filepath.Join(suite.tempDir, "remote-"+label)
+	suite.Require().NoError(os.MkdirAll(remoteDir, 0755))
+
+	cmd := exec.Command("git", "init", "--bare", "--initial-branch=main")
+	cmd.Dir = remoteDir
+	suite.Require().NoError(cmd.Run())
+
+	workingDir := filepath.Join(suite.tempDir, "working-"+label)
+	suite.Require().NoError(os.MkdirAll(workingDir, 0755))
+
+	cmd = exec.Command("git", "clone", remoteDir, workingDir)
+	suite.Require().NoError(cmd.Run())
+
+	for relPath, content := range files {
+		fullPath := filepath.Join(workingDir, relPath)
+		suite.Require().NoError(os.MkdirAll(filepath.Dir(fullPath), 0755))
+		suite.Require().NoError(os.WriteFile(fullPath, []byte(content), 0644))
+	}
+
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = workingDir
+	suite.Require().NoError(cmd.Run())
+
+	cmd = exec.Command("git", "-c", "user.email=test@example.com", "-c", "user.name=Test User", "commit", "-m", "lnk: seed")
+	cmd.Dir = workingDir
+	suite.Require().NoError(cmd.Run())
+
+	cmd = exec.Command("git", "push", "origin", "main")
+	cmd.Dir = workingDir
+	suite.Require().NoError(cmd.Run())
+
+	return remoteDir
+}
+
+// TestInitWithRemote_HostHints_Mixed verifies that `init -r` next-step output
+// surfaces a `lnk pull --host <name>` hint for every `.lnk.<host>` file present
+// in the cloned repo, in addition to the common pull/add hints.
+func (suite *CLITestSuite) TestInitWithRemote_HostHints_Mixed() {
+	remoteDir := suite.setupRemoteWithFiles("mixed", map[string]string{
+		".lnk":              ".bashrc\n",
+		".bashrc":           "export PATH",
+		".lnk.work":         ".vimrc\n",
+		"work.lnk/.vimrc":   "set number",
+		".lnk.laptop":       ".zshrc\n",
+		"laptop.lnk/.zshrc": "# zsh",
+	})
+
+	err := suite.runCommand("init", "-r", remoteDir, "--no-bootstrap")
+	suite.NoError(err)
+
+	output := suite.stdout.String()
+	suite.Contains(output, "Run lnk pull --host work to restore the work configuration")
+	suite.Contains(output, "Run lnk pull --host laptop to restore the laptop configuration")
+	suite.Contains(output, "lnk pull")
+	suite.Contains(output, "lnk add <file>")
+}
+
+// TestInitWithRemote_HostHints_HostOnly verifies that a repo containing only
+// host-specific configs (no common `.lnk`) still surfaces per-host pull hints.
+func (suite *CLITestSuite) TestInitWithRemote_HostHints_HostOnly() {
+	remoteDir := suite.setupRemoteWithFiles("hostonly", map[string]string{
+		".lnk.work":       ".vimrc\n",
+		"work.lnk/.vimrc": "set number",
+	})
+
+	err := suite.runCommand("init", "-r", remoteDir, "--no-bootstrap")
+	suite.NoError(err)
+
+	output := suite.stdout.String()
+	suite.Contains(output, "Run lnk pull --host work to restore the work configuration")
+}
+
+// TestInitWithRemote_HostHints_CommonOnly verifies that a repo with no host
+// configs does not emit any `--host` next-step hints.
+func (suite *CLITestSuite) TestInitWithRemote_HostHints_CommonOnly() {
+	remoteDir := suite.setupRemoteWithFiles("commononly", map[string]string{
+		".lnk":    ".bashrc\n",
+		".bashrc": "export PATH",
+	})
+
+	err := suite.runCommand("init", "-r", remoteDir, "--no-bootstrap")
+	suite.NoError(err)
+
+	output := suite.stdout.String()
+	suite.Contains(output, "lnk pull")
+	suite.Contains(output, "lnk add <file>")
+	suite.NotContains(output, "--host", "Common-only repo must not emit host-specific next-step hints")
+}
+
+// TestListAll_PerHostPullHint verifies that `list --all` emits a per-host hint
+// pointing to `lnk pull --host <name>` for each discovered host section.
+func (suite *CLITestSuite) TestListAll_PerHostPullHint() {
+	suite.Require().NoError(suite.runCommand("init"))
+	suite.stdout.Reset()
+
+	bashrc := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(bashrc, []byte("export PATH"), 0644))
+	suite.Require().NoError(suite.runCommand("add", bashrc))
+	suite.stdout.Reset()
+
+	vimrc := filepath.Join(suite.tempDir, ".vimrc")
+	suite.Require().NoError(os.WriteFile(vimrc, []byte("set number"), 0644))
+	suite.Require().NoError(suite.runCommand("add", "--host", "work", vimrc))
+	suite.stdout.Reset()
+
+	zshrc := filepath.Join(suite.tempDir, ".zshrc")
+	suite.Require().NoError(os.WriteFile(zshrc, []byte("# zsh"), 0644))
+	suite.Require().NoError(suite.runCommand("add", "--host", "laptop", zshrc))
+	suite.stdout.Reset()
+
+	err := suite.runCommand("list", "--all")
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "Host: work")
+	suite.Contains(output, "Host: laptop")
+	suite.Contains(output, "lnk pull --host work")
+	suite.Contains(output, "lnk pull --host laptop")
+	suite.Contains(output, "lnk list --host <hostname>")
+}
+
+// TestListAll_CommonOnlyNoHostHint verifies that `list --all` on a repo with
+// only common managed items does not emit any per-host pull hint.
+func (suite *CLITestSuite) TestListAll_CommonOnlyNoHostHint() {
+	suite.Require().NoError(suite.runCommand("init"))
+	suite.stdout.Reset()
+
+	bashrc := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(bashrc, []byte("export PATH"), 0644))
+	suite.Require().NoError(suite.runCommand("add", bashrc))
+	suite.stdout.Reset()
+
+	err := suite.runCommand("list", "--all")
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "Common configuration")
+	suite.NotContains(output, "lnk pull --host", "Common-only repo must not emit per-host pull hints")
+}
+
+// TestListAll_HostOnlyEmitsHint verifies that `list --all` on a repo with only
+// host-specific configs (no common items) still shows the host section and the
+// per-host pull hint.
+func (suite *CLITestSuite) TestListAll_HostOnlyEmitsHint() {
+	suite.Require().NoError(suite.runCommand("init"))
+	suite.stdout.Reset()
+
+	vimrc := filepath.Join(suite.tempDir, ".vimrc")
+	suite.Require().NoError(os.WriteFile(vimrc, []byte("set number"), 0644))
+	suite.Require().NoError(suite.runCommand("add", "--host", "work", vimrc))
+	suite.stdout.Reset()
+
+	err := suite.runCommand("list", "--all")
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "Host: work")
+	suite.Contains(output, "lnk pull --host work")
+	suite.Contains(output, "(no files)", "Empty common section should still render")
+}
+
 func TestCLISuite(t *testing.T) {
 	suite.Run(t, new(CLITestSuite))
 }
