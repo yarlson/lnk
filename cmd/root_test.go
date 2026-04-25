@@ -2652,30 +2652,36 @@ func (suite *CLITestSuite) TestDiffCommand_ColorsAlways() {
 	suite.Contains(output, "\033[", "--colors always must emit ANSI color codes")
 }
 
-// TestDiffCommand_QuietSuppressesOutput verifies that --quiet suppresses all
-// diff output (both the no-changes message and the diff body).
+// TestDiffCommand_QuietSuppressesOutput verifies that --quiet suppresses
+// all diff output and that dirty state is signalled via a non-zero exit
+// (a non-nil error from RunE) rather than printed text.
 func (suite *CLITestSuite) TestDiffCommand_QuietSuppressesOutput() {
 	err := suite.runCommand("init")
 	suite.Require().NoError(err)
 	suite.stdout.Reset()
+	suite.stderr.Reset()
 
 	testFile := filepath.Join(suite.tempDir, ".bashrc")
 	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin"), 0644))
 	suite.Require().NoError(suite.runCommand("add", testFile))
 	suite.stdout.Reset()
+	suite.stderr.Reset()
 
-	// After add the working tree is clean — exercise the "no changes" branch.
+	// Clean working tree — exit 0, no output.
 	err = suite.runCommand("--quiet", "diff")
-	suite.NoError(err)
+	suite.NoError(err, "--quiet diff must succeed on a clean repo")
 	suite.Empty(suite.stdout.String(), "--quiet must suppress 'no changes' message")
+	suite.Empty(suite.stderr.String(), "--quiet must not write to stderr on a clean repo")
 
-	// Now introduce uncommitted changes and exercise the diff-body branch.
+	// Dirty working tree — non-zero exit, still no output.
 	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin\nEDITOR=vim"), 0644))
 	suite.stdout.Reset()
+	suite.stderr.Reset()
 
 	err = suite.runCommand("--quiet", "diff")
-	suite.NoError(err)
+	suite.Error(err, "--quiet diff must signal dirty state via non-zero exit")
 	suite.Empty(suite.stdout.String(), "--quiet must suppress diff output entirely")
+	suite.Empty(suite.stderr.String(), "--quiet must not write the dirty error to stderr")
 }
 
 // setupRemoteWithFiles creates a bare remote and seeds it with the given files

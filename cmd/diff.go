@@ -1,10 +1,17 @@
 package cmd
 
 import (
+	"errors"
+
 	"github.com/spf13/cobra"
 
 	"github.com/yarlson/lnk/internal/lnk"
 )
+
+// errDiffHasChanges is returned by `lnk diff --quiet` when the repo has
+// uncommitted changes. It exists only to drive a non-zero exit code;
+// quiet mode suppresses error display, so callers see only the exit code.
+var errDiffHasChanges = errors.New("repository has uncommitted changes")
 
 func newDiffCmd() *cobra.Command {
 	return &cobra.Command{
@@ -17,11 +24,18 @@ func newDiffCmd() *cobra.Command {
 			l := lnk.NewLnk()
 			w := GetWriter(cmd)
 
-			// In quiet mode, avoid materializing the patch — only validate the
-			// repo and probe for changes via `git diff --quiet`.
+			// In quiet mode, avoid materializing the patch — probe for changes
+			// via `git diff --quiet` and signal dirty state through the exit
+			// code (errDiffHasChanges → exit 1).
 			if w.Quiet() {
-				_, err := l.HasDiff()
-				return err
+				dirty, err := l.HasDiff()
+				if err != nil {
+					return err
+				}
+				if dirty {
+					return errDiffHasChanges
+				}
+				return nil
 			}
 
 			output, err := l.Diff(w.Colors())
