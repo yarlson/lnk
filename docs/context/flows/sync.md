@@ -16,7 +16,7 @@ All sync operations require the repo path to be a Git repository; otherwise they
 
 ## Diff (`lnk diff`)
 
-`syncer.Diff(color)` runs `git diff --color=never|always` in the repo path. The CLI auto-detects color via `isTerminal()` and prints the raw diff to stdout. When the diff is empty, the CLI prints a structured "No uncommitted changes" message instead.
+`syncer.Diff(color)` runs `git diff --color=never|always` in the repo path. The CLI respects the `--colors` flag (auto-detected or explicit) and routes output through `Writer`. When `--quiet` is set, the command suppresses all output through `Writer`, returning only the exit code. When the diff is empty, the CLI prints a structured "No uncommitted changes" message instead (unless `--quiet` suppresses it).
 
 ## Push (`lnk push [message]`)
 
