@@ -202,6 +202,19 @@ func isTerminal() bool {
 	return (fileInfo.Mode() & os.ModeCharDevice) != 0
 }
 
+// IsTerminal reports whether the writer's underlying output is a terminal.
+func (w *Writer) IsTerminal() bool {
+	f, ok := w.out.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
+}
+
 // autoDetectConfig performs one-time auto-detection if not explicitly configured
 func autoDetectConfig() {
 	if !autoDetected {

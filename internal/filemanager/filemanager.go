@@ -199,7 +199,7 @@ func (fm *Manager) processFiles(files []validatedFile, progress ProgressCallback
 
 	for i, f := range files {
 		if progress != nil {
-			progress(i+1, total, filepath.Base(f.absPath))
+			progress(i+1, total, f.relativePath)
 		}
 
 		storagePath := fm.tracker.HostStoragePath()

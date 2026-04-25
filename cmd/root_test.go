@@ -1227,9 +1227,10 @@ func (suite *CLITestSuite) TestDryRunRecursive() {
 	suite.Contains(output, "15 files", "Should show correct file count")
 	suite.Contains(output, "recursively", "Should indicate recursive mode")
 
-	// Should show some of the files
+	// Dry-run is a preview for verification, so all files are shown.
 	suite.Contains(output, "config1.json", "Should show first file")
 	suite.Contains(output, "config15.json", "Should show last file")
+	suite.NotContains(output, "more files", "Should not truncate dry-run preview")
 
 	// Verify no actual changes were made
 	for i := 1; i <= 15; i++ {
@@ -2408,6 +2409,148 @@ func (suite *CLITestSuite) TestStatusCommand_DirtyWithLnkHome_PrintsRepoPath() {
 	suite.Contains(output, "Repository has uncommitted changes")
 	suite.Contains(output, expectedRepo)
 	suite.NotContains(output, "~/.config/lnk")
+}
+
+// TestDryRun_SameBasenameDifferentDirs verifies that dry-run output uses
+// home-relative paths so files sharing a basename in different directories
+// remain distinguishable.
+func (suite *CLITestSuite) TestDryRun_SameBasenameDifferentDirs() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	dirA := filepath.Join(suite.tempDir, "a")
+	dirB := filepath.Join(suite.tempDir, "b")
+	suite.Require().NoError(os.MkdirAll(dirA, 0755))
+	suite.Require().NoError(os.MkdirAll(dirB, 0755))
+
+	fileA := filepath.Join(dirA, "config.json")
+	fileB := filepath.Join(dirB, "config.json")
+	suite.Require().NoError(os.WriteFile(fileA, []byte(`{"a":1}`), 0644))
+	suite.Require().NoError(os.WriteFile(fileB, []byte(`{"b":1}`), 0644))
+
+	err = suite.runCommand("add", "--dry-run", fileA, fileB)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "Would add", "Should show dry-run preview")
+	suite.Contains(output, "~/a/config.json", "Should show first file with parent directory")
+	suite.Contains(output, "~/b/config.json", "Should show second file with parent directory")
+}
+
+// TestMultiAdd_SameBasenameDifferentDirs verifies that the success listing
+// for multi-file add disambiguates same-basename files via home-relative paths.
+func (suite *CLITestSuite) TestMultiAdd_SameBasenameDifferentDirs() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	dirA := filepath.Join(suite.tempDir, "a")
+	dirB := filepath.Join(suite.tempDir, "b")
+	suite.Require().NoError(os.MkdirAll(dirA, 0755))
+	suite.Require().NoError(os.MkdirAll(dirB, 0755))
+
+	fileA := filepath.Join(dirA, "config.json")
+	fileB := filepath.Join(dirB, "config.json")
+	suite.Require().NoError(os.WriteFile(fileA, []byte(`{"a":1}`), 0644))
+	suite.Require().NoError(os.WriteFile(fileB, []byte(`{"b":1}`), 0644))
+
+	err = suite.runCommand("add", fileA, fileB)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/a/config.json", "Should show first source path")
+	suite.Contains(output, "~/b/config.json", "Should show second source path")
+	suite.Contains(output, "~/.config/lnk/a/config.json", "Should show first storage path")
+	suite.Contains(output, "~/.config/lnk/b/config.json", "Should show second storage path")
+}
+
+// TestRecursiveAdd_NonTTYNoCarriageReturn verifies that piped/non-TTY contexts
+// do not receive carriage-return progress redraws (which mangle log capture).
+func (suite *CLITestSuite) TestRecursiveAdd_NonTTYNoCarriageReturn() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	configDir := filepath.Join(suite.tempDir, ".config", "test-app")
+	suite.Require().NoError(os.MkdirAll(configDir, 0755))
+
+	for i := 0; i < 15; i++ {
+		file := filepath.Join(configDir, fmt.Sprintf("file%d.txt", i))
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("c%d", i)), 0644))
+	}
+
+	err = suite.runCommand("add", "--recursive", configDir)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.NotContains(output, "\r", "Non-TTY output should not include carriage-return redraws")
+	suite.NotContains(output, "Processing ", "Non-TTY output should not include progress redraws")
+}
+
+// TestRecursiveAdd_LargeBatchTruncatesListing verifies that recursive success
+// output stays compact for large batches via truncation + "more files" hint.
+func (suite *CLITestSuite) TestRecursiveAdd_LargeBatchTruncatesListing() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	configDir := filepath.Join(suite.tempDir, ".config", "many")
+	suite.Require().NoError(os.MkdirAll(configDir, 0755))
+
+	for i := 0; i < 12; i++ {
+		file := filepath.Join(configDir, fmt.Sprintf("file%d.txt", i))
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("c%d", i)), 0644))
+	}
+
+	err = suite.runCommand("add", "--recursive", configDir)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "Added 12 files recursively", "Should show full count")
+	suite.Contains(output, "more files", "Should truncate to a 'more files' hint")
+}
+
+// TestRecursiveAdd_SameBasenameMultipleDirs verifies that recursive add with
+// same-basename files in different subdirs displays them unambiguously via
+// home-relative paths.
+func (suite *CLITestSuite) TestRecursiveAdd_SameBasenameMultipleDirs() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create structure with same-basename files in different subdirs
+	dirA := filepath.Join(suite.tempDir, "configs", "app-a")
+	dirB := filepath.Join(suite.tempDir, "configs", "app-b")
+	suite.Require().NoError(os.MkdirAll(dirA, 0755))
+	suite.Require().NoError(os.MkdirAll(dirB, 0755))
+
+	configFileA := filepath.Join(dirA, "config.json")
+	configFileB := filepath.Join(dirB, "config.json")
+	suite.Require().NoError(os.WriteFile(configFileA, []byte(`{"app":"a"}`), 0644))
+	suite.Require().NoError(os.WriteFile(configFileB, []byte(`{"app":"b"}`), 0644))
+
+	// Recursive add from parent
+	parentDir := filepath.Join(suite.tempDir, "configs")
+	err = suite.runCommand("add", "--recursive", parentDir)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	// Both files added
+	suite.Contains(output, "Added 2 files recursively", "Should show count of both files")
+
+	// Same-basename files are distinguishable by their directory path in the source
+	suite.Contains(output, "app-a/config.json", "Should show first config with parent dir")
+	suite.Contains(output, "app-b/config.json", "Should show second config with parent dir")
+
+	// Verify files are actually managed (symlinks created)
+	infoA, err := os.Lstat(configFileA)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, infoA.Mode()&os.ModeSymlink, "config.json in app-a should be symlink")
+
+	infoB, err := os.Lstat(configFileB)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, infoB.Mode()&os.ModeSymlink, "config.json in app-b should be symlink")
 }
 
 func TestCLISuite(t *testing.T) {
