@@ -110,6 +110,7 @@ func (l *Lnk) AddRecursive(paths []string) error {
 func (l *Lnk) AddRecursiveWithProgress(paths []string, progress ProgressCallback) error {
 	return l.files.AddRecursiveWithProgress(paths, progress)
 }
+func (l *Lnk) Create(filePath string) error { return l.files.Create(filePath) }
 func (l *Lnk) PreviewAdd(paths []string, recursive bool) ([]string, error) {
 	return l.files.PreviewAdd(paths, recursive)
 }

@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	"github.com/yarlson/lnk/internal/fs"
 	"github.com/yarlson/lnk/internal/lnk"
+	error2 "github.com/yarlson/lnk/internal/lnkerror"
 )
 
 func newAddCmd() *cobra.Command {
@@ -20,6 +23,8 @@ Examples:
   lnk add --recursive ~/.config/nvim  # Add directory contents individually  
   lnk add --dry-run ~/.gitconfig      # Preview what would be added
   lnk add --host work ~/.ssh/config   # Add host-specific configuration
+  lnk add ~/.foo --force              # If file doesn't exist create and then add 
+  lnk add ~/.foo/bar/ --force         #   trailing slash indicates a folder should be created then added
 
 The --recursive flag processes directory contents individually instead of treating 
 the directory as a single unit. This is useful for configuration directories where
@@ -34,6 +39,7 @@ changes to your system - perfect for verification before bulk operations.`,
 			host, _ := cmd.Flags().GetString("host")
 			recursive, _ := cmd.Flags().GetBool("recursive")
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			force, _ := cmd.Flags().GetBool("force")
 			lnk := lnk.NewLnk(lnk.WithHost(host))
 			w := GetWriter(cmd)
 
@@ -91,7 +97,18 @@ changes to your system - perfect for verification before bulk operations.`,
 				if len(args) == 1 {
 					// Single file - use existing Add method for backward compatibility
 					if err := lnk.Add(args[0]); err != nil {
-						return err
+						// If Error FileNotExists and Force - Create and Add
+						var addErr *error2.Error
+						if errors.As(err, &addErr) {
+							if addErr.Err == fs.ErrFileNotExists && force {
+								if err := lnk.Create(args[0]); err != nil {
+									return err
+								}
+								w.Writeln(Colored(fmt.Sprintf("%s didn't exist - created", args[0]), ColorCyan))
+							} else {
+								return err
+							}
+						}
 					}
 				} else {
 					// Multiple files - use AddMultiple for atomic operation
@@ -189,5 +206,6 @@ changes to your system - perfect for verification before bulk operations.`,
 	cmd.Flags().StringP("host", "H", "", "Manage file for specific host (default: common configuration)")
 	cmd.Flags().BoolP("recursive", "r", false, "Add directory contents individually instead of the directory as a whole")
 	cmd.Flags().BoolP("dry-run", "n", false, "Show what would be added without making changes")
+	cmd.Flags().Bool("force", false, "Force add a file or directory even if it doesn't exist (WARNING: check file or directory permissions as needed)")
 	return cmd
 }
