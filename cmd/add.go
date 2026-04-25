@@ -34,12 +34,12 @@ changes to your system - perfect for verification before bulk operations.`,
 			host, _ := cmd.Flags().GetString("host")
 			recursive, _ := cmd.Flags().GetBool("recursive")
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
-			lnk := lnk.NewLnk(lnk.WithHost(host))
+			l := lnk.NewLnk(lnk.WithHost(host))
 			w := GetWriter(cmd)
 
 			// Handle dry-run mode
 			if dryRun {
-				files, err := lnk.PreviewAdd(args, recursive)
+				files, err := l.PreviewAdd(args, recursive)
 				if err != nil {
 					return err
 				}
@@ -67,7 +67,7 @@ changes to your system - perfect for verification before bulk operations.`,
 			// Handle recursive mode
 			if recursive {
 				// Get preview to count files first for better output
-				previewFiles, err := lnk.PreviewAdd(args, recursive)
+				previewFiles, err := l.PreviewAdd(args, recursive)
 				if err != nil {
 					return err
 				}
@@ -77,7 +77,7 @@ changes to your system - perfect for verification before bulk operations.`,
 					w.WriteString(fmt.Sprintf("\r⏳ Processing %d/%d: %s", current, total, currentFile))
 				}
 
-				if err := lnk.AddRecursiveWithProgress(args, progressCallback); err != nil {
+				if err := l.AddRecursiveWithProgress(args, progressCallback); err != nil {
 					return err
 				}
 
@@ -90,12 +90,12 @@ changes to your system - perfect for verification before bulk operations.`,
 				// Use appropriate method based on number of files
 				if len(args) == 1 {
 					// Single file - use existing Add method for backward compatibility
-					if err := lnk.Add(args[0]); err != nil {
+					if err := l.Add(args[0]); err != nil {
 						return err
 					}
 				} else {
 					// Multiple files - use AddMultiple for atomic operation
-					if err := lnk.AddMultiple(args); err != nil {
+					if err := l.AddMultiple(args); err != nil {
 						return err
 					}
 				}
@@ -118,17 +118,10 @@ changes to your system - perfect for verification before bulk operations.`,
 
 				for i := 0; i < filesToShow; i++ {
 					basename := filepath.Base(args[i])
-					if host != "" {
-						w.WriteString("   ").
-							Write(Link(basename)).
-							WriteString(" → ").
-							Writeln(Colored(fmt.Sprintf("~/.config/lnk/%s.lnk/...", host), ColorCyan))
-					} else {
-						w.WriteString("   ").
-							Write(Link(basename)).
-							WriteString(" → ").
-							Writeln(Colored("~/.config/lnk/...", ColorCyan))
-					}
+					w.WriteString("   ").
+						Write(Link(basename)).
+						WriteString(" → ").
+						Writeln(Colored(lnk.FormatManagedPath(host, args[i]), ColorCyan))
 				}
 
 				if len(args) > 5 {
@@ -141,17 +134,13 @@ changes to your system - perfect for verification before bulk operations.`,
 				basename := filepath.Base(filePath)
 				if host != "" {
 					w.Writeln(Sparkles(fmt.Sprintf("Added %s to lnk (host: %s)", basename, host)))
-					w.WriteString("   ").
-						Write(Link(filePath)).
-						WriteString(" → ").
-						Writeln(Colored(fmt.Sprintf("~/.config/lnk/%s.lnk/%s", host, filePath), ColorCyan))
 				} else {
 					w.Writeln(Sparkles(fmt.Sprintf("Added %s to lnk", basename)))
-					w.WriteString("   ").
-						Write(Link(filePath)).
-						WriteString(" → ").
-						Writeln(Colored(fmt.Sprintf("~/.config/lnk/%s", filePath), ColorCyan))
 				}
+				w.WriteString("   ").
+					Write(Link(filePath)).
+					WriteString(" → ").
+					Writeln(Colored(lnk.FormatManagedPath(host, filePath), ColorCyan))
 			} else {
 				// Multiple files - show summary
 				if host != "" {
@@ -163,17 +152,10 @@ changes to your system - perfect for verification before bulk operations.`,
 				// List each added file
 				for _, filePath := range args {
 					basename := filepath.Base(filePath)
-					if host != "" {
-						w.WriteString("   ").
-							Write(Link(basename)).
-							WriteString(" → ").
-							Writeln(Colored(fmt.Sprintf("~/.config/lnk/%s.lnk/...", host), ColorCyan))
-					} else {
-						w.WriteString("   ").
-							Write(Link(basename)).
-							WriteString(" → ").
-							Writeln(Colored("~/.config/lnk/...", ColorCyan))
-					}
+					w.WriteString("   ").
+						Write(Link(basename)).
+						WriteString(" → ").
+						Writeln(Colored(lnk.FormatManagedPath(host, filePath), ColorCyan))
 				}
 			}
 

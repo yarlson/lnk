@@ -2,7 +2,7 @@
 
 **Git-native dotfiles manager. No config files, no templates, no ceremony.**
 
-Track dotfiles across machines with one command. Lnk moves files into a Git repo (`~/.config/lnk`), symlinks them back, and stays out of your way.
+Track dotfiles across machines with one command. Lnk moves files into a Git repo (defaults to `~/.config/lnk`; override with `LNK_HOME` or `XDG_CONFIG_HOME`), symlinks them back, and stays out of your way.
 
 ```bash
 lnk init -r git@github.com:you/dotfiles.git   # clone & bootstrap

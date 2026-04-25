@@ -152,6 +152,34 @@ func DisplayPath(path string) string {
 	return path
 }
 
+// storageRootForHost returns the storage root path for the given host.
+// For host=="", returns the repo root. For host!="", returns <repo>/<host>.lnk.
+func storageRootForHost(repoPath, host string) string {
+	if host != "" {
+		return filepath.Join(repoPath, host+".lnk")
+	}
+	return repoPath
+}
+
+// FormatManagedPath returns a display-friendly path to where the file at
+// originalPath is (or will be) stored under lnk management for the given host.
+// host="" selects the common configuration. originalPath may be absolute or
+// relative to the current working directory.
+func FormatManagedPath(host, originalPath string) string {
+	absPath, err := filepath.Abs(originalPath)
+	if err != nil {
+		return originalPath
+	}
+	relativePath, err := fs.GetRelativePath(absPath)
+	if err != nil {
+		return originalPath
+	}
+	repoPath := GetRepoPath()
+	storageRoot := storageRootForHost(repoPath, host)
+	storage := filepath.Join(storageRoot, relativePath)
+	return DisplayPath(storage)
+}
+
 // GetCurrentHostname returns the current system hostname.
 func GetCurrentHostname() (string, error) {
 	hostname, err := os.Hostname()

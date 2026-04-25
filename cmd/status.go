@@ -16,8 +16,8 @@ func newStatusCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			lnk := lnk.NewLnk()
-			status, err := lnk.Status()
+			l := lnk.NewLnk()
+			status, err := l.Status()
 			if err != nil {
 				return err
 			}
@@ -41,6 +41,8 @@ func newStatusCmd() *cobra.Command {
 func displayDirtyStatus(cmd *cobra.Command, status *lnk.StatusInfo) {
 	w := GetWriter(cmd)
 
+	repoDisplay := lnk.DisplayPath(lnk.GetRepoPath())
+
 	w.Writeln(Warning("Repository has uncommitted changes")).
 		WriteString("   ").
 		Write(Message{Text: "Remote: ", Emoji: "📡"}).
@@ -51,7 +53,7 @@ func displayDirtyStatus(cmd *cobra.Command, status *lnk.StatusInfo) {
 			Write(Info("Run ")).
 			Write(Bold("git add && git commit")).
 			WriteString(" in ").
-			Write(Colored("~/.config/lnk", ColorCyan)).
+			Write(Colored(repoDisplay, ColorCyan)).
 			WriteString(" or ").
 			Write(Bold("lnk push")).
 			WritelnString(" to commit changes")
@@ -64,7 +66,7 @@ func displayDirtyStatus(cmd *cobra.Command, status *lnk.StatusInfo) {
 		Write(Info("Run ")).
 		Write(Bold("git add && git commit")).
 		WriteString(" in ").
-		Write(Colored("~/.config/lnk", ColorCyan)).
+		Write(Colored(repoDisplay, ColorCyan)).
 		WriteString(" or ").
 		Write(Bold("lnk push")).
 		WritelnString(" to commit changes")

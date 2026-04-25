@@ -10,16 +10,16 @@ func newDiffCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:           "diff",
 		Short:         "📝 Show uncommitted changes in the repository",
-		Long:          "Displays a diff of uncommitted changes in the lnk repository, equivalent to running git diff in ~/.config/lnk.",
+		Long:          "Displays a diff of uncommitted changes in the lnk repository, equivalent to running git diff inside the lnk repo.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			lnk := lnk.NewLnk()
+			l := lnk.NewLnk()
 
 			// Determine color mode based on terminal detection
 			useColor := isTerminal()
 
-			output, err := lnk.Diff(useColor)
+			output, err := l.Diff(useColor)
 			if err != nil {
 				return err
 			}

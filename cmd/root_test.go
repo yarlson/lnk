@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
+
+	"github.com/yarlson/lnk/internal/lnk"
 )
 
 type CLITestSuite struct {
@@ -2211,6 +2213,201 @@ func (suite *CLITestSuite) TestDoctorCommand_DryRun_BrokenSymlinks() {
 	// Verify NO actual fix — symlink should still be missing
 	_, err = os.Lstat(testFile)
 	suite.True(os.IsNotExist(err))
+}
+
+// TestAddCommand_AbsolutePath_PrintsCorrectDestination verifies that the destination
+// printed for `lnk add <abs-path>` is the canonical storage path, not the original
+// argument concatenated after the repo path.
+func (suite *CLITestSuite) TestAddCommand_AbsolutePath_PrintsCorrectDestination() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", testFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/.bashrc")
+	// Bug regression: must not contain the absolute path glued to the repo path.
+	suite.NotContains(output, "~/.config/lnk"+testFile)
+	suite.NotContains(output, "~/.config/lnk//")
+}
+
+// TestAddCommand_LnkHome_PrintsCorrectDestination verifies that when LNK_HOME
+// points elsewhere, the destination reflects that path (not the default
+// ~/.config/lnk).
+func (suite *CLITestSuite) TestAddCommand_LnkHome_PrintsCorrectDestination() {
+	customRepo := filepath.Join(suite.tempDir, "custom-repo")
+	suite.T().Setenv("LNK_HOME", customRepo)
+
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", testFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	expected := lnk.DisplayPath(filepath.Join(customRepo, ".bashrc"))
+	suite.Contains(output, expected)
+	suite.NotContains(output, "~/.config/lnk")
+}
+
+// TestAddCommand_NestedPath_PrintsFullRelativePath verifies that nested files
+// show the full relative path under the repo, not just the basename.
+func (suite *CLITestSuite) TestAddCommand_NestedPath_PrintsFullRelativePath() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	nestedDir := filepath.Join(suite.tempDir, ".config", "nvim")
+	err = os.MkdirAll(nestedDir, 0755)
+	suite.Require().NoError(err)
+	nestedFile := filepath.Join(nestedDir, "init.lua")
+	err = os.WriteFile(nestedFile, []byte("vim.opt.number = true"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", nestedFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/.config/nvim/init.lua")
+}
+
+// TestAddCommand_HostNestedPath_PrintsHostStoragePath verifies that host-scoped
+// nested files show <host>.lnk/<full-relative-path>.
+func (suite *CLITestSuite) TestAddCommand_HostNestedPath_PrintsHostStoragePath() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	nestedDir := filepath.Join(suite.tempDir, ".config", "nvim")
+	err = os.MkdirAll(nestedDir, 0755)
+	suite.Require().NoError(err)
+	nestedFile := filepath.Join(nestedDir, "init.lua")
+	err = os.WriteFile(nestedFile, []byte("vim.opt.number = true"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", "--host", "work", nestedFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/work.lnk/.config/nvim/init.lua")
+}
+
+// TestAddCommand_RecursiveNestedPath_PrintsFullRelativePath verifies that recursive add
+// displays the full relative path for nested files, not just basenames.
+func (suite *CLITestSuite) TestAddCommand_RecursiveNestedPath_PrintsFullRelativePath() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	docsDir := filepath.Join(suite.tempDir, ".docs")
+	err = os.MkdirAll(docsDir, 0755)
+	suite.Require().NoError(err)
+
+	readmeFile := filepath.Join(docsDir, "README.md")
+	err = os.WriteFile(readmeFile, []byte("# Documentation"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", "--recursive", docsDir)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/.docs/README.md")
+}
+
+// TestRemoveCommand_NestedPath_PrintsCanonicalSourcePath verifies that `lnk rm`
+// prints the actual storage path (using the full relative path), not just the
+// basename glued onto ~/.config/lnk.
+func (suite *CLITestSuite) TestRemoveCommand_NestedPath_PrintsCanonicalSourcePath() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+
+	nestedDir := filepath.Join(suite.tempDir, ".config", "nvim")
+	err = os.MkdirAll(nestedDir, 0755)
+	suite.Require().NoError(err)
+	nestedFile := filepath.Join(nestedDir, "init.lua")
+	err = os.WriteFile(nestedFile, []byte("vim.opt.number = true"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", nestedFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	err = suite.runCommand("rm", nestedFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/.config/nvim/init.lua")
+}
+
+// TestRemoveCommand_HostNestedPath_PrintsHostStoragePath verifies that a
+// host-scoped `lnk rm` prints the canonical `<host>.lnk/<full-relative-path>`
+// location.
+func (suite *CLITestSuite) TestRemoveCommand_HostNestedPath_PrintsHostStoragePath() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+
+	nestedDir := filepath.Join(suite.tempDir, ".config", "nvim")
+	err = os.MkdirAll(nestedDir, 0755)
+	suite.Require().NoError(err)
+	nestedFile := filepath.Join(nestedDir, "init.lua")
+	err = os.WriteFile(nestedFile, []byte("vim.opt.number = true"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", "--host", "work", nestedFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	err = suite.runCommand("rm", "--host", "work", nestedFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/work.lnk/.config/nvim/init.lua")
+}
+
+// TestStatusCommand_DirtyWithLnkHome_PrintsRepoPath verifies the dirty-status
+// hint references the actual repo path, not a hardcoded ~/.config/lnk.
+func (suite *CLITestSuite) TestStatusCommand_DirtyWithLnkHome_PrintsRepoPath() {
+	customRepo := filepath.Join(suite.tempDir, "custom-repo")
+	suite.T().Setenv("LNK_HOME", customRepo)
+
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("a"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	cmd := exec.Command("git", "remote", "add", "origin", "https://github.com/test/dotfiles.git")
+	cmd.Dir = customRepo
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	err = os.WriteFile(testFile, []byte("b"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("status")
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	expectedRepo := lnk.DisplayPath(customRepo)
+	suite.Contains(output, "Repository has uncommitted changes")
+	suite.Contains(output, expectedRepo)
+	suite.NotContains(output, "~/.config/lnk")
 }
 
 func TestCLISuite(t *testing.T) {

@@ -24,11 +24,11 @@ Use --force to remove a file from tracking even if the symlink no longer exists
 			filePath := args[0]
 			host, _ := cmd.Flags().GetString("host")
 			force, _ := cmd.Flags().GetBool("force")
-			lnk := lnk.NewLnk(lnk.WithHost(host))
+			l := lnk.NewLnk(lnk.WithHost(host))
 			w := GetWriter(cmd)
 
 			if force {
-				if err := lnk.RemoveForce(filePath); err != nil {
+				if err := l.RemoveForce(filePath); err != nil {
 					return err
 				}
 
@@ -44,24 +44,20 @@ Use --force to remove a file from tracking even if the symlink no longer exists
 				return w.Err()
 			}
 
-			if err := lnk.Remove(filePath); err != nil {
+			if err := l.Remove(filePath); err != nil {
 				return err
 			}
 
 			basename := filepath.Base(filePath)
 			if host != "" {
-				w.Writeln(Message{Text: fmt.Sprintf("Removed %s from lnk (host: %s)", basename, host), Emoji: "🗑️", Bold: true}).
-					WriteString("   ").
-					Write(Message{Text: fmt.Sprintf("~/.config/lnk/%s.lnk/%s", host, basename), Emoji: "↩️"}).
-					WriteString(" → ").
-					Writeln(Colored(filePath, ColorCyan))
+				w.Writeln(Message{Text: fmt.Sprintf("Removed %s from lnk (host: %s)", basename, host), Emoji: "🗑️", Bold: true})
 			} else {
-				w.Writeln(Message{Text: fmt.Sprintf("Removed %s from lnk", basename), Emoji: "🗑️", Bold: true}).
-					WriteString("   ").
-					Write(Message{Text: fmt.Sprintf("~/.config/lnk/%s", basename), Emoji: "↩️"}).
-					WriteString(" → ").
-					Writeln(Colored(filePath, ColorCyan))
+				w.Writeln(Message{Text: fmt.Sprintf("Removed %s from lnk", basename), Emoji: "🗑️", Bold: true})
 			}
+			w.WriteString("   ").
+				Write(Message{Text: lnk.FormatManagedPath(host, filePath), Emoji: "↩️"}).
+				WriteString(" → ").
+				Writeln(Colored(filePath, ColorCyan))
 
 			w.WriteString("   ").
 				Writeln(Message{Text: "Original file restored", Emoji: "📄"})
