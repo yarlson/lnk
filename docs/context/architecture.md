@@ -29,7 +29,7 @@ Re-exported from the facade for backwards compatibility:
 
 - Sentinel errors (`ErrAlreadyManaged`, `ErrNotInitialized`, etc.) — re-exported from `lnkerror`.
 - Type aliases: `ProgressCallback = filemanager.ProgressCallback`, `StatusInfo = syncer.StatusInfo`, `DoctorResult = doctor.Result`.
-- Helpers: `DisplayPath` (replaces `$HOME` with `~`), `GetCurrentHostname`, `GetRepoPath`.
+- Helpers: `DisplayPath` (replaces `$HOME` with `~`), `GetCurrentHostname`, `GetRepoPath`, `FormatManagedPath` (formats the display path where a file is/will be stored for a given host).
 
 ## Collaborator responsibilities
 
@@ -46,6 +46,6 @@ Re-exported from the facade for backwards compatibility:
 
 - One file per subcommand under `cmd/`: `init`, `add`, `rm`, `list`, `status`, `diff`, `push`, `pull`, `doctor`, `bootstrap`.
 - `cmd/root.go` builds the root command, registers persistent flags (`--colors`, `--emoji`, `--no-emoji`, `--quiet`/`-q`), wires `SetGlobalConfig`, and registers all subcommands. Long help text in `Long` is the source of truth for command descriptions.
-- `cmd/output.go` defines `Writer`, `Message`, predefined message constructors (`Success`, `Error`, `Warning`, `Info`, `Target`, `Rocket`, `Sparkles`, `Link`, `Plain`, `Bold`, `Colored`), and the global `OutputConfig`. Auto-detection runs once on first writer access; explicit flags via `SetGlobalConfig` short-circuit it.
+- `cmd/output.go` defines `Writer`, `Message`, predefined message constructors (`Success`, `Error`, `Warning`, `Info`, `Target`, `Rocket`, `Sparkles`, `Link`, `Plain`, `Bold`, `Colored`), and the global `OutputConfig`. Writer exposes `Colors()` and `Quiet()` accessors for commands to query the active color and quiet-mode settings. Auto-detection runs once on first writer access; explicit flags via `SetGlobalConfig` short-circuit it.
 - `cmd.DisplayError` is the single error rendering path; called from `Execute` on any error returned by a `RunE`.
 - `Version` is set from `main.go` at startup via `cmd.SetVersion(version, buildTime)`; both are populated by GoReleaser ldflags.

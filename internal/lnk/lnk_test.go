@@ -111,10 +111,11 @@ func (suite *CoreTestSuite) TestErrorConditions() {
 	suite.Error(err)
 	suite.Contains(err.Error(), "File is not managed by lnk")
 
-	// Test status without remote
-	_, err = suite.lnk.Status()
-	suite.Error(err)
-	suite.Contains(err.Error(), "No remote repository is configured")
+	// Status without remote should still succeed and report local state
+	// (Remote="" indicates no remote configured).
+	status, err := suite.lnk.Status()
+	suite.Require().NoError(err)
+	suite.Empty(status.Remote)
 }
 
 // Test hostname detection

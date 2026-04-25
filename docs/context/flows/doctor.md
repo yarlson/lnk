@@ -21,10 +21,11 @@
 type Result struct {
     InvalidEntries []string
     BrokenSymlinks []string
+    BackedUp       []string  // only populated by Fix, not Preview
 }
 ```
 
-`HasIssues()` and `TotalIssues()` are convenience helpers used by the CLI for messaging.
+`HasIssues()` and `TotalIssues()` are convenience helpers used by the CLI for messaging. `BackedUp` tracks managed items whose pre-existing real files were renamed to `.lnk-backup` during symlink restoration.
 
 ## Preview (`lnk doctor --dry-run`)
 
@@ -39,7 +40,7 @@ type Result struct {
 3. If any broken symlinks were found, call `syncer.RestoreSymlinks()`. This is the same code path used by `lnk pull` and includes the `.lnk-backup` rename safety net for pre-existing real files.
 4. If any invalid entries were found, rewrite the index without them, `git add` the index file, and commit with `lnk: cleaned N invalid entry|entries` (singular/plural picked by count).
 
-The CLI then renders parallel "Fixed N issues" / "Restored N broken symlinks" / "Removed N invalid entries" sections and suggests `lnk push` to sync the cleanup commit to the remote.
+The CLI then renders sections for fixed broken symlinks (including any backup notice for files renamed to `.lnk-backup`), removed invalid entries, and a summary of all fixes applied. It suggests `lnk push` to sync the cleanup commit to the remote.
 
 ## Notes on scope
 

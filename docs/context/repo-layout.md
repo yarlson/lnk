@@ -48,7 +48,7 @@ The index file is staged as `.lnk` or `.lnk.<host>`.
 ## Hostname discovery
 
 - `lnk.GetCurrentHostname()` returns `os.Hostname()`. The CLI does not call this implicitly — `--host` is always opaque user input. Users typically run `lnk pull --host $(hostname)` after `lnk pull` on a fresh machine.
-- `cmd.findHostConfigs` enumerates hosts by listing `.lnk.*` files at the repo root (used by `lnk list --all`).
+- `cmd.findHostConfigs` enumerates hosts by listing `.lnk.*` files at the repo root (used by `lnk list --all` and `lnk init -r` for host-specific next-step hints).
 
 ## Repo-detection rules
 

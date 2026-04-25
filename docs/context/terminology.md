@@ -15,3 +15,5 @@
 - **ahead / behind** — local commits not yet on the upstream tracking branch / upstream commits not yet local.
 - **invalid entry** — a path listed in `.lnk`/`.lnk.<host>` that no longer corresponds to a stored file in the repo, or that escapes the storage path (`..` or absolute). Cleaned by `lnk doctor`.
 - **broken symlink** — a managed item that exists in storage but whose `~/<relative path>` is not a symlink pointing at the stored file. Repaired by `lnk doctor` and by `lnk pull`.
+- **`.lnk-backup` file** — file or directory renamed from `~/<relative path>` when `lnk pull` finds a regular file/directory where a symlink should exist. Preserves user data instead of overwriting.
+- **RestoreInfo** — return type of `Pull()` and `RestoreSymlinks()`. Contains two lists: `Restored` (relative paths where symlinks were created) and `BackedUp` (relative paths where pre-existing files were renamed to `.lnk-backup`).

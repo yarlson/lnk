@@ -1,12 +1,23 @@
 package cmd
 
 import (
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/yarlson/lnk/internal/lnk"
 )
+
+// bootstrapWriters returns the stdout/stderr targets to hand to the
+// bootstrap script: the cobra command's writers in normal mode, or
+// io.Discard in both slots when --quiet is set.
+func bootstrapWriters(cmd *cobra.Command, w *Writer) (io.Writer, io.Writer) {
+	if w.Quiet() {
+		return io.Discard, io.Discard
+	}
+	return cmd.OutOrStdout(), cmd.ErrOrStderr()
+}
 
 func newBootstrapCmd() *cobra.Command {
 	return &cobra.Command{
@@ -49,7 +60,8 @@ func newBootstrapCmd() *cobra.Command {
 				return err
 			}
 
-			if err := lnk.RunBootstrapScript(scriptPath, os.Stdout, os.Stderr, os.Stdin); err != nil {
+			scriptOut, scriptErr := bootstrapWriters(cmd, w)
+			if err := lnk.RunBootstrapScript(scriptPath, scriptOut, scriptErr, os.Stdin); err != nil {
 				return err
 			}
 

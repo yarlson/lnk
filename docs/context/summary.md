@@ -31,9 +31,9 @@ A single error type (`lnkerror.Error`) wraps sentinel errors with optional path 
 - Add files or directories, individually or recursively, with dry-run preview.
 - Per-host configurations via `--host` (mutually exclusive index + storage namespace).
 - Bootstrap script (`bootstrap.sh`) discovery and execution on clone or on demand.
-- Sync status (ahead/behind/dirty), uncommitted diff, commit and push, pull and re-link.
+- Sync status (ahead/behind/dirty/no-remote), uncommitted diff, commit and push, pull and re-link. Handles repositories with no remote configured by showing local state and guiding the user to add a remote.
 - Health checks: detect and repair broken symlinks and stale index entries.
-- Backs up pre-existing real files at symlink destinations to `<path>.lnk-backup` instead of overwriting on `pull`.
+- Backs up pre-existing real files at symlink destinations to `<path>.lnk-backup` instead of overwriting on `pull`. Reports both restored symlinks and backed-up files separately.
 - Output controls: `--colors auto|always|never`, `--emoji` / `--no-emoji`, `--quiet`/`-q`, plus `NO_COLOR` env.
 
 ## Tech Stack

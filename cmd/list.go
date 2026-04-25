@@ -186,12 +186,17 @@ func listAllConfigs(cmd *cobra.Command) error {
 					Writeln(Link(item))
 			}
 		}
+
+		w.WriteString("   ").
+			Write(Info("Run ")).
+			Write(Bold(fmt.Sprintf("lnk pull --host %s", host))).
+			WritelnString(" to restore these symlinks")
 	}
 
 	w.WritelnString("").
 		Write(Info("Use ")).
 		Write(Bold("lnk list --host <hostname>")).
-		WritelnString(" to see specific host configuration")
+		WritelnString(" to see a single host configuration")
 	return w.Err()
 }
 

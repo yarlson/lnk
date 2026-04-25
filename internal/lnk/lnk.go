@@ -37,6 +37,10 @@ type ProgressCallback = filemanager.ProgressCallback
 // StatusInfo contains repository sync status information.
 type StatusInfo = syncer.StatusInfo
 
+// RestoreInfo reports symlink restoration results, including which files
+// were renamed to <path>.lnk-backup to preserve user data.
+type RestoreInfo = syncer.RestoreInfo
+
 // DoctorResult contains the results of a doctor scan or execution.
 type DoctorResult = doctor.Result
 
@@ -118,13 +122,14 @@ func (l *Lnk) RemoveForce(filePath string) error { return l.files.RemoveForce(fi
 
 // --- Sync delegates ---
 
-func (l *Lnk) Status() (*StatusInfo, error)       { return l.syncer.Status() }
-func (l *Lnk) Diff(color bool) (string, error)    { return l.syncer.Diff(color) }
-func (l *Lnk) Push(message string) error          { return l.syncer.Push(message) }
-func (l *Lnk) Pull() ([]string, error)            { return l.syncer.Pull() }
-func (l *Lnk) List() ([]string, error)            { return l.syncer.List() }
-func (l *Lnk) GetCommits() ([]string, error)      { return l.syncer.GetCommits() }
-func (l *Lnk) RestoreSymlinks() ([]string, error) { return l.syncer.RestoreSymlinks() }
+func (l *Lnk) Status() (*StatusInfo, error)           { return l.syncer.Status() }
+func (l *Lnk) Diff(color bool) (string, error)        { return l.syncer.Diff(color) }
+func (l *Lnk) HasDiff() (bool, error)                 { return l.syncer.HasDiff() }
+func (l *Lnk) Push(message string) error              { return l.syncer.Push(message) }
+func (l *Lnk) Pull() (*RestoreInfo, error)            { return l.syncer.Pull() }
+func (l *Lnk) List() ([]string, error)                { return l.syncer.List() }
+func (l *Lnk) GetCommits() ([]string, error)          { return l.syncer.GetCommits() }
+func (l *Lnk) RestoreSymlinks() (*RestoreInfo, error) { return l.syncer.RestoreSymlinks() }
 
 // --- Bootstrap delegates ---
 
@@ -150,6 +155,34 @@ func DisplayPath(path string) string {
 		return "~" + strings.TrimPrefix(path, homeDir)
 	}
 	return path
+}
+
+// storageRootForHost returns the storage root path for the given host.
+// For host=="", returns the repo root. For host!="", returns <repo>/<host>.lnk.
+func storageRootForHost(repoPath, host string) string {
+	if host != "" {
+		return filepath.Join(repoPath, host+".lnk")
+	}
+	return repoPath
+}
+
+// FormatManagedPath returns a display-friendly path to where the file at
+// originalPath is (or will be) stored under lnk management for the given host.
+// host="" selects the common configuration. originalPath may be absolute or
+// relative to the current working directory.
+func FormatManagedPath(host, originalPath string) string {
+	absPath, err := filepath.Abs(originalPath)
+	if err != nil {
+		return originalPath
+	}
+	relativePath, err := fs.GetRelativePath(absPath)
+	if err != nil {
+		return originalPath
+	}
+	repoPath := GetRepoPath()
+	storageRoot := storageRootForHost(repoPath, host)
+	storage := filepath.Join(storageRoot, relativePath)
+	return DisplayPath(storage)
 }
 
 // GetCurrentHostname returns the current system hostname.

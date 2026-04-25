@@ -20,7 +20,10 @@ The user lands with an empty Git repo at the repo path and is prompted to `lnk a
    - `git clone <url> <repoPath>` from the parent directory (5-minute timeout).
    - Set upstream: try `branch --set-upstream-to=origin/main main`, else `origin/master master`, else best-effort `origin/HEAD`.
 3. Unless `--no-bootstrap`, `bootstrapper.FindScript()` looks for `bootstrap.sh` at the repo root and runs it via `bash bootstrap.sh` with the user's stdio. A bootstrap failure is reported but does not undo the clone — the user is told to retry with `lnk bootstrap`.
-4. The CLI prints next-step hints: `lnk pull` to restore symlinks, `lnk add <file>` to start managing files.
+4. The CLI prints next-step hints:
+   - `lnk pull` to restore common symlinks.
+   - `lnk pull --host <host>` for each discovered host (enumerated via `findHostConfigs` by listing `.lnk.*` files).
+   - `lnk add <file>` to start managing new files.
 
 ## Adopting an existing remote on a fresh repo
 

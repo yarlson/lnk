@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -78,7 +79,8 @@ func newInitCmd() *cobra.Command {
 							return err
 						}
 
-						if err := l.RunBootstrapScript(scriptPath, os.Stdout, os.Stderr, os.Stdin); err != nil {
+						scriptOut, scriptErr := bootstrapWriters(cmd, w)
+						if err := l.RunBootstrapScript(scriptPath, scriptOut, scriptErr, os.Stdin); err != nil {
 							w.WritelnString("").
 								Writeln(Warning("Bootstrap script failed, but repository was initialized successfully")).
 								WriteString("   ").
@@ -104,12 +106,26 @@ func newInitCmd() *cobra.Command {
 					}
 				}
 
+				hosts, err := findHostConfigs()
+				if err != nil {
+					// best-effort: if host enumeration fails, skip per-host hints
+					// (init already succeeded, this is non-critical)
+					hosts = nil
+				}
+
 				w.WritelnString("").
 					Writeln(Info("Next steps:")).
 					WriteString("   • Run ").
 					Write(Bold("lnk pull")).
-					Writeln(Plain(" to restore symlinks")).
-					WriteString("   • Use ").
+					Writeln(Plain(" to restore symlinks"))
+
+				for _, host := range hosts {
+					w.WriteString("   • Run ").
+						Write(Bold(fmt.Sprintf("lnk pull --host %s", host))).
+						Writeln(Plain(fmt.Sprintf(" to restore the %s configuration", host)))
+				}
+
+				w.WriteString("   • Use ").
 					Write(Bold("lnk add <file>")).
 					Writeln(Plain(" to manage new files"))
 

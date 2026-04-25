@@ -115,6 +115,8 @@ Use --dry-run to preview what would be fixed without making changes.`,
 				}
 			}
 
+			writeBackupNotice(w, result.BackedUp)
+
 			// Show removed invalid entries
 			if len(result.InvalidEntries) > 0 {
 				w.WritelnString("")

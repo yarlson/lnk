@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
+
+	"github.com/yarlson/lnk/internal/lnk"
+	error2 "github.com/yarlson/lnk/internal/lnkerror"
 )
 
 type CLITestSuite struct {
@@ -160,10 +164,12 @@ func (suite *CLITestSuite) TestStatusCommand() {
 	suite.Require().NoError(err)
 	suite.stdout.Reset()
 
-	// Test status without remote - should fail
+	// Status without a remote should still succeed and report local state.
 	err = suite.runCommand("status")
-	suite.Error(err)
-	suite.Contains(err.Error(), "No remote repository is configured")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "No remote configured")
+	suite.Contains(output, "git remote add origin")
 }
 
 func (suite *CLITestSuite) TestListCommand() {
@@ -790,6 +796,34 @@ touch bootstrap-ran.txt
 	suite.FileExists(markerFile)
 }
 
+// TestBootstrapCommand_QuietSuppressesScriptOutput verifies that --quiet
+// silences not only the framing output but also stdout/stderr from the
+// bootstrap script itself, while still actually executing it.
+func (suite *CLITestSuite) TestBootstrapCommand_QuietSuppressesScriptOutput() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+	suite.stderr.Reset()
+
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	bootstrapScript := filepath.Join(lnkDir, "bootstrap.sh")
+	scriptContent := `#!/bin/bash
+echo "BOOT_STDOUT_LEAK"
+echo "BOOT_STDERR_LEAK" >&2
+touch quiet-bootstrap-ran.txt
+`
+	err = os.WriteFile(bootstrapScript, []byte(scriptContent), 0755)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("--quiet", "bootstrap")
+	suite.NoError(err)
+	suite.Empty(suite.stdout.String(), "--quiet must suppress framing and script stdout")
+	suite.NotContains(suite.stderr.String(), "BOOT_STDERR_LEAK", "--quiet must suppress script stderr")
+
+	// Marker proves the script actually executed even with --quiet.
+	suite.FileExists(filepath.Join(lnkDir, "quiet-bootstrap-ran.txt"))
+}
+
 func (suite *CLITestSuite) TestInitWithBootstrap() {
 	// Create a temporary remote repository with bootstrap script
 	remoteDir := filepath.Join(suite.tempDir, "remote")
@@ -1225,9 +1259,10 @@ func (suite *CLITestSuite) TestDryRunRecursive() {
 	suite.Contains(output, "15 files", "Should show correct file count")
 	suite.Contains(output, "recursively", "Should indicate recursive mode")
 
-	// Should show some of the files
+	// Dry-run is a preview for verification, so all files are shown.
 	suite.Contains(output, "config1.json", "Should show first file")
 	suite.Contains(output, "config15.json", "Should show last file")
+	suite.NotContains(output, "more files", "Should not truncate dry-run preview")
 
 	// Verify no actual changes were made
 	for i := 1; i <= 15; i++ {
@@ -2211,6 +2246,775 @@ func (suite *CLITestSuite) TestDoctorCommand_DryRun_BrokenSymlinks() {
 	// Verify NO actual fix — symlink should still be missing
 	_, err = os.Lstat(testFile)
 	suite.True(os.IsNotExist(err))
+}
+
+// TestAddCommand_AbsolutePath_PrintsCorrectDestination verifies that the destination
+// printed for `lnk add <abs-path>` is the canonical storage path, not the original
+// argument concatenated after the repo path.
+func (suite *CLITestSuite) TestAddCommand_AbsolutePath_PrintsCorrectDestination() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", testFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/.bashrc")
+	// Bug regression: must not contain the absolute path glued to the repo path.
+	suite.NotContains(output, "~/.config/lnk"+testFile)
+	suite.NotContains(output, "~/.config/lnk//")
+}
+
+// TestAddCommand_LnkHome_PrintsCorrectDestination verifies that when LNK_HOME
+// points elsewhere, the destination reflects that path (not the default
+// ~/.config/lnk).
+func (suite *CLITestSuite) TestAddCommand_LnkHome_PrintsCorrectDestination() {
+	customRepo := filepath.Join(suite.tempDir, "custom-repo")
+	suite.T().Setenv("LNK_HOME", customRepo)
+
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin:$PATH"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", testFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	expected := lnk.DisplayPath(filepath.Join(customRepo, ".bashrc"))
+	suite.Contains(output, expected)
+	suite.NotContains(output, "~/.config/lnk")
+}
+
+// TestAddCommand_NestedPath_PrintsFullRelativePath verifies that nested files
+// show the full relative path under the repo, not just the basename.
+func (suite *CLITestSuite) TestAddCommand_NestedPath_PrintsFullRelativePath() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	nestedDir := filepath.Join(suite.tempDir, ".config", "nvim")
+	err = os.MkdirAll(nestedDir, 0755)
+	suite.Require().NoError(err)
+	nestedFile := filepath.Join(nestedDir, "init.lua")
+	err = os.WriteFile(nestedFile, []byte("vim.opt.number = true"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", nestedFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/.config/nvim/init.lua")
+}
+
+// TestAddCommand_HostNestedPath_PrintsHostStoragePath verifies that host-scoped
+// nested files show <host>.lnk/<full-relative-path>.
+func (suite *CLITestSuite) TestAddCommand_HostNestedPath_PrintsHostStoragePath() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	nestedDir := filepath.Join(suite.tempDir, ".config", "nvim")
+	err = os.MkdirAll(nestedDir, 0755)
+	suite.Require().NoError(err)
+	nestedFile := filepath.Join(nestedDir, "init.lua")
+	err = os.WriteFile(nestedFile, []byte("vim.opt.number = true"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", "--host", "work", nestedFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/work.lnk/.config/nvim/init.lua")
+}
+
+// TestAddCommand_RecursiveNestedPath_PrintsFullRelativePath verifies that recursive add
+// displays the full relative path for nested files, not just basenames.
+func (suite *CLITestSuite) TestAddCommand_RecursiveNestedPath_PrintsFullRelativePath() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	docsDir := filepath.Join(suite.tempDir, ".docs")
+	err = os.MkdirAll(docsDir, 0755)
+	suite.Require().NoError(err)
+
+	readmeFile := filepath.Join(docsDir, "README.md")
+	err = os.WriteFile(readmeFile, []byte("# Documentation"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", "--recursive", docsDir)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/.docs/README.md")
+}
+
+// TestRemoveCommand_NestedPath_PrintsCanonicalSourcePath verifies that `lnk rm`
+// prints the actual storage path (using the full relative path), not just the
+// basename glued onto ~/.config/lnk.
+func (suite *CLITestSuite) TestRemoveCommand_NestedPath_PrintsCanonicalSourcePath() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+
+	nestedDir := filepath.Join(suite.tempDir, ".config", "nvim")
+	err = os.MkdirAll(nestedDir, 0755)
+	suite.Require().NoError(err)
+	nestedFile := filepath.Join(nestedDir, "init.lua")
+	err = os.WriteFile(nestedFile, []byte("vim.opt.number = true"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", nestedFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	err = suite.runCommand("rm", nestedFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/.config/nvim/init.lua")
+}
+
+// TestRemoveCommand_HostNestedPath_PrintsHostStoragePath verifies that a
+// host-scoped `lnk rm` prints the canonical `<host>.lnk/<full-relative-path>`
+// location.
+func (suite *CLITestSuite) TestRemoveCommand_HostNestedPath_PrintsHostStoragePath() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+
+	nestedDir := filepath.Join(suite.tempDir, ".config", "nvim")
+	err = os.MkdirAll(nestedDir, 0755)
+	suite.Require().NoError(err)
+	nestedFile := filepath.Join(nestedDir, "init.lua")
+	err = os.WriteFile(nestedFile, []byte("vim.opt.number = true"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("add", "--host", "work", nestedFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	err = suite.runCommand("rm", "--host", "work", nestedFile)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/.config/lnk/work.lnk/.config/nvim/init.lua")
+}
+
+// TestStatusCommand_DirtyWithLnkHome_PrintsRepoPath verifies the dirty-status
+// hint references the actual repo path, not a hardcoded ~/.config/lnk.
+func (suite *CLITestSuite) TestStatusCommand_DirtyWithLnkHome_PrintsRepoPath() {
+	customRepo := filepath.Join(suite.tempDir, "custom-repo")
+	suite.T().Setenv("LNK_HOME", customRepo)
+
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("a"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	cmd := exec.Command("git", "remote", "add", "origin", "https://github.com/test/dotfiles.git")
+	cmd.Dir = customRepo
+	err = cmd.Run()
+	suite.Require().NoError(err)
+
+	err = os.WriteFile(testFile, []byte("b"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("status")
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	expectedRepo := lnk.DisplayPath(customRepo)
+	suite.Contains(output, "Repository has uncommitted changes")
+	suite.Contains(output, expectedRepo)
+	suite.NotContains(output, "~/.config/lnk")
+}
+
+// TestDryRun_SameBasenameDifferentDirs verifies that dry-run output uses
+// home-relative paths so files sharing a basename in different directories
+// remain distinguishable.
+func (suite *CLITestSuite) TestDryRun_SameBasenameDifferentDirs() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	dirA := filepath.Join(suite.tempDir, "a")
+	dirB := filepath.Join(suite.tempDir, "b")
+	suite.Require().NoError(os.MkdirAll(dirA, 0755))
+	suite.Require().NoError(os.MkdirAll(dirB, 0755))
+
+	fileA := filepath.Join(dirA, "config.json")
+	fileB := filepath.Join(dirB, "config.json")
+	suite.Require().NoError(os.WriteFile(fileA, []byte(`{"a":1}`), 0644))
+	suite.Require().NoError(os.WriteFile(fileB, []byte(`{"b":1}`), 0644))
+
+	err = suite.runCommand("add", "--dry-run", fileA, fileB)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "Would add", "Should show dry-run preview")
+	suite.Contains(output, "~/a/config.json", "Should show first file with parent directory")
+	suite.Contains(output, "~/b/config.json", "Should show second file with parent directory")
+}
+
+// TestMultiAdd_SameBasenameDifferentDirs verifies that the success listing
+// for multi-file add disambiguates same-basename files via home-relative paths.
+func (suite *CLITestSuite) TestMultiAdd_SameBasenameDifferentDirs() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	dirA := filepath.Join(suite.tempDir, "a")
+	dirB := filepath.Join(suite.tempDir, "b")
+	suite.Require().NoError(os.MkdirAll(dirA, 0755))
+	suite.Require().NoError(os.MkdirAll(dirB, 0755))
+
+	fileA := filepath.Join(dirA, "config.json")
+	fileB := filepath.Join(dirB, "config.json")
+	suite.Require().NoError(os.WriteFile(fileA, []byte(`{"a":1}`), 0644))
+	suite.Require().NoError(os.WriteFile(fileB, []byte(`{"b":1}`), 0644))
+
+	err = suite.runCommand("add", fileA, fileB)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "~/a/config.json", "Should show first source path")
+	suite.Contains(output, "~/b/config.json", "Should show second source path")
+	suite.Contains(output, "~/.config/lnk/a/config.json", "Should show first storage path")
+	suite.Contains(output, "~/.config/lnk/b/config.json", "Should show second storage path")
+}
+
+// TestRecursiveAdd_NonTTYNoCarriageReturn verifies that piped/non-TTY contexts
+// do not receive carriage-return progress redraws (which mangle log capture).
+func (suite *CLITestSuite) TestRecursiveAdd_NonTTYNoCarriageReturn() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	configDir := filepath.Join(suite.tempDir, ".config", "test-app")
+	suite.Require().NoError(os.MkdirAll(configDir, 0755))
+
+	for i := 0; i < 15; i++ {
+		file := filepath.Join(configDir, fmt.Sprintf("file%d.txt", i))
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("c%d", i)), 0644))
+	}
+
+	err = suite.runCommand("add", "--recursive", configDir)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.NotContains(output, "\r", "Non-TTY output should not include carriage-return redraws")
+	suite.NotContains(output, "Processing ", "Non-TTY output should not include progress redraws")
+}
+
+// TestRecursiveAdd_LargeBatchTruncatesListing verifies that recursive success
+// output stays compact for large batches via truncation + "more files" hint.
+func (suite *CLITestSuite) TestRecursiveAdd_LargeBatchTruncatesListing() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	configDir := filepath.Join(suite.tempDir, ".config", "many")
+	suite.Require().NoError(os.MkdirAll(configDir, 0755))
+
+	for i := 0; i < 12; i++ {
+		file := filepath.Join(configDir, fmt.Sprintf("file%d.txt", i))
+		suite.Require().NoError(os.WriteFile(file, []byte(fmt.Sprintf("c%d", i)), 0644))
+	}
+
+	err = suite.runCommand("add", "--recursive", configDir)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "Added 12 files recursively", "Should show full count")
+	suite.Contains(output, "more files", "Should truncate to a 'more files' hint")
+}
+
+// TestRecursiveAdd_SameBasenameMultipleDirs verifies that recursive add with
+// same-basename files in different subdirs displays them unambiguously via
+// home-relative paths.
+func (suite *CLITestSuite) TestRecursiveAdd_SameBasenameMultipleDirs() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Create structure with same-basename files in different subdirs
+	dirA := filepath.Join(suite.tempDir, "configs", "app-a")
+	dirB := filepath.Join(suite.tempDir, "configs", "app-b")
+	suite.Require().NoError(os.MkdirAll(dirA, 0755))
+	suite.Require().NoError(os.MkdirAll(dirB, 0755))
+
+	configFileA := filepath.Join(dirA, "config.json")
+	configFileB := filepath.Join(dirB, "config.json")
+	suite.Require().NoError(os.WriteFile(configFileA, []byte(`{"app":"a"}`), 0644))
+	suite.Require().NoError(os.WriteFile(configFileB, []byte(`{"app":"b"}`), 0644))
+
+	// Recursive add from parent
+	parentDir := filepath.Join(suite.tempDir, "configs")
+	err = suite.runCommand("add", "--recursive", parentDir)
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	// Both files added
+	suite.Contains(output, "Added 2 files recursively", "Should show count of both files")
+
+	// Same-basename files are distinguishable by their directory path in the source
+	suite.Contains(output, "app-a/config.json", "Should show first config with parent dir")
+	suite.Contains(output, "app-b/config.json", "Should show second config with parent dir")
+
+	// Verify files are actually managed (symlinks created)
+	infoA, err := os.Lstat(configFileA)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, infoA.Mode()&os.ModeSymlink, "config.json in app-a should be symlink")
+
+	infoB, err := os.Lstat(configFileB)
+	suite.NoError(err)
+	suite.Equal(os.ModeSymlink, infoB.Mode()&os.ModeSymlink, "config.json in app-b should be symlink")
+}
+
+// TestDryRunDuplicateError_NoEmbeddedFormatting verifies that the duplicate-path
+// error from `add --dry-run` carries no embedded ANSI/emoji and is shaped as a
+// structured lnkerror so DisplayError can render it like other CLI errors.
+func (suite *CLITestSuite) TestDryRunDuplicateError_NoEmbeddedFormatting() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin"), 0644))
+	suite.Require().NoError(suite.runCommand("add", testFile))
+	suite.stdout.Reset()
+
+	err = suite.runCommand("add", "--dry-run", testFile)
+	suite.Require().Error(err)
+
+	msg := err.Error()
+	suite.NotContains(msg, "\033[", "Error must not embed ANSI color codes")
+	suite.NotContains(msg, "❌", "Error must not embed emoji")
+	suite.Contains(msg, "already managed", "Error must still convey duplicate condition")
+
+	var lnkErr *error2.Error
+	suite.Require().True(errors.As(err, &lnkErr), "Error must be a structured lnkerror")
+	suite.Equal(error2.ErrAlreadyManaged, lnkErr.Err, "Should wrap ErrAlreadyManaged sentinel")
+	suite.NotEmpty(lnkErr.Path, "Structured error should carry the offending path")
+}
+
+// TestDiffCommand_ColorsNever verifies that --colors never produces no ANSI
+// escape codes in diff output even when there are uncommitted changes.
+func (suite *CLITestSuite) TestDiffCommand_ColorsNever() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin"), 0644))
+	suite.Require().NoError(suite.runCommand("add", testFile))
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin\nEDITOR=vim"), 0644))
+	suite.stdout.Reset()
+
+	err = suite.runCommand("--colors", "never", "diff")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "EDITOR=vim", "Diff should still include changed content")
+	suite.NotContains(output, "\033[", "--colors never must not emit ANSI color codes")
+}
+
+// TestDiffCommand_ColorsAlways verifies that --colors always forces ANSI color
+// codes into the diff output even when stdout is not a terminal.
+func (suite *CLITestSuite) TestDiffCommand_ColorsAlways() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin"), 0644))
+	suite.Require().NoError(suite.runCommand("add", testFile))
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin\nEDITOR=vim"), 0644))
+	suite.stdout.Reset()
+
+	err = suite.runCommand("--colors", "always", "diff")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "EDITOR=vim", "Diff should include changed content")
+	suite.Contains(output, "\033[", "--colors always must emit ANSI color codes")
+}
+
+// TestDiffCommand_QuietSuppressesOutput verifies that --quiet suppresses
+// all diff output and that dirty state is signalled via a non-zero exit
+// (a non-nil error from RunE) rather than printed text.
+func (suite *CLITestSuite) TestDiffCommand_QuietSuppressesOutput() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+	suite.stderr.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin"), 0644))
+	suite.Require().NoError(suite.runCommand("add", testFile))
+	suite.stdout.Reset()
+	suite.stderr.Reset()
+
+	// Clean working tree — exit 0, no output.
+	err = suite.runCommand("--quiet", "diff")
+	suite.NoError(err, "--quiet diff must succeed on a clean repo")
+	suite.Empty(suite.stdout.String(), "--quiet must suppress 'no changes' message")
+	suite.Empty(suite.stderr.String(), "--quiet must not write to stderr on a clean repo")
+
+	// Dirty working tree — non-zero exit, still no output.
+	suite.Require().NoError(os.WriteFile(testFile, []byte("PATH=/bin\nEDITOR=vim"), 0644))
+	suite.stdout.Reset()
+	suite.stderr.Reset()
+
+	err = suite.runCommand("--quiet", "diff")
+	suite.Error(err, "--quiet diff must signal dirty state via non-zero exit")
+	suite.Empty(suite.stdout.String(), "--quiet must suppress diff output entirely")
+	suite.Empty(suite.stderr.String(), "--quiet must not write the dirty error to stderr")
+}
+
+// setupRemoteWithFiles creates a bare remote and seeds it with the given files
+// (path -> content). Returns the bare remote path so callers can pass it to
+// `init -r`. Used by the host-flow guidance tests.
+func (suite *CLITestSuite) setupRemoteWithFiles(label string, files map[string]string) string {
+	remoteDir := filepath.Join(suite.tempDir, "remote-"+label)
+	suite.Require().NoError(os.MkdirAll(remoteDir, 0755))
+
+	cmd := exec.Command("git", "init", "--bare", "--initial-branch=main")
+	cmd.Dir = remoteDir
+	suite.Require().NoError(cmd.Run())
+
+	workingDir := filepath.Join(suite.tempDir, "working-"+label)
+	suite.Require().NoError(os.MkdirAll(workingDir, 0755))
+
+	cmd = exec.Command("git", "clone", remoteDir, workingDir)
+	suite.Require().NoError(cmd.Run())
+
+	for relPath, content := range files {
+		fullPath := filepath.Join(workingDir, relPath)
+		suite.Require().NoError(os.MkdirAll(filepath.Dir(fullPath), 0755))
+		suite.Require().NoError(os.WriteFile(fullPath, []byte(content), 0644))
+	}
+
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = workingDir
+	suite.Require().NoError(cmd.Run())
+
+	cmd = exec.Command("git", "-c", "user.email=test@example.com", "-c", "user.name=Test User", "commit", "-m", "lnk: seed")
+	cmd.Dir = workingDir
+	suite.Require().NoError(cmd.Run())
+
+	cmd = exec.Command("git", "push", "origin", "main")
+	cmd.Dir = workingDir
+	suite.Require().NoError(cmd.Run())
+
+	return remoteDir
+}
+
+// TestInitWithRemote_HostHints_Mixed verifies that `init -r` next-step output
+// surfaces a `lnk pull --host <name>` hint for every `.lnk.<host>` file present
+// in the cloned repo, in addition to the common pull/add hints.
+func (suite *CLITestSuite) TestInitWithRemote_HostHints_Mixed() {
+	remoteDir := suite.setupRemoteWithFiles("mixed", map[string]string{
+		".lnk":              ".bashrc\n",
+		".bashrc":           "export PATH",
+		".lnk.work":         ".vimrc\n",
+		"work.lnk/.vimrc":   "set number",
+		".lnk.laptop":       ".zshrc\n",
+		"laptop.lnk/.zshrc": "# zsh",
+	})
+
+	err := suite.runCommand("init", "-r", remoteDir, "--no-bootstrap")
+	suite.NoError(err)
+
+	output := suite.stdout.String()
+	suite.Contains(output, "Run lnk pull --host work to restore the work configuration")
+	suite.Contains(output, "Run lnk pull --host laptop to restore the laptop configuration")
+	suite.Contains(output, "lnk pull")
+	suite.Contains(output, "lnk add <file>")
+}
+
+// TestInitWithRemote_HostHints_HostOnly verifies that a repo containing only
+// host-specific configs (no common `.lnk`) still surfaces per-host pull hints.
+func (suite *CLITestSuite) TestInitWithRemote_HostHints_HostOnly() {
+	remoteDir := suite.setupRemoteWithFiles("hostonly", map[string]string{
+		".lnk.work":       ".vimrc\n",
+		"work.lnk/.vimrc": "set number",
+	})
+
+	err := suite.runCommand("init", "-r", remoteDir, "--no-bootstrap")
+	suite.NoError(err)
+
+	output := suite.stdout.String()
+	suite.Contains(output, "Run lnk pull --host work to restore the work configuration")
+}
+
+// TestInitWithRemote_HostHints_CommonOnly verifies that a repo with no host
+// configs does not emit any `--host` next-step hints.
+func (suite *CLITestSuite) TestInitWithRemote_HostHints_CommonOnly() {
+	remoteDir := suite.setupRemoteWithFiles("commononly", map[string]string{
+		".lnk":    ".bashrc\n",
+		".bashrc": "export PATH",
+	})
+
+	err := suite.runCommand("init", "-r", remoteDir, "--no-bootstrap")
+	suite.NoError(err)
+
+	output := suite.stdout.String()
+	suite.Contains(output, "lnk pull")
+	suite.Contains(output, "lnk add <file>")
+	suite.NotContains(output, "--host", "Common-only repo must not emit host-specific next-step hints")
+}
+
+// TestListAll_PerHostPullHint verifies that `list --all` emits a per-host hint
+// pointing to `lnk pull --host <name>` for each discovered host section.
+func (suite *CLITestSuite) TestListAll_PerHostPullHint() {
+	suite.Require().NoError(suite.runCommand("init"))
+	suite.stdout.Reset()
+
+	bashrc := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(bashrc, []byte("export PATH"), 0644))
+	suite.Require().NoError(suite.runCommand("add", bashrc))
+	suite.stdout.Reset()
+
+	vimrc := filepath.Join(suite.tempDir, ".vimrc")
+	suite.Require().NoError(os.WriteFile(vimrc, []byte("set number"), 0644))
+	suite.Require().NoError(suite.runCommand("add", "--host", "work", vimrc))
+	suite.stdout.Reset()
+
+	zshrc := filepath.Join(suite.tempDir, ".zshrc")
+	suite.Require().NoError(os.WriteFile(zshrc, []byte("# zsh"), 0644))
+	suite.Require().NoError(suite.runCommand("add", "--host", "laptop", zshrc))
+	suite.stdout.Reset()
+
+	err := suite.runCommand("list", "--all")
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "Host: work")
+	suite.Contains(output, "Host: laptop")
+	suite.Contains(output, "lnk pull --host work")
+	suite.Contains(output, "lnk pull --host laptop")
+	suite.Contains(output, "lnk list --host <hostname>")
+}
+
+// TestListAll_CommonOnlyNoHostHint verifies that `list --all` on a repo with
+// only common managed items does not emit any per-host pull hint.
+func (suite *CLITestSuite) TestListAll_CommonOnlyNoHostHint() {
+	suite.Require().NoError(suite.runCommand("init"))
+	suite.stdout.Reset()
+
+	bashrc := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(bashrc, []byte("export PATH"), 0644))
+	suite.Require().NoError(suite.runCommand("add", bashrc))
+	suite.stdout.Reset()
+
+	err := suite.runCommand("list", "--all")
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "Common configuration")
+	suite.NotContains(output, "lnk pull --host", "Common-only repo must not emit per-host pull hints")
+}
+
+// TestListAll_HostOnlyEmitsHint verifies that `list --all` on a repo with only
+// host-specific configs (no common items) still shows the host section and the
+// per-host pull hint.
+func (suite *CLITestSuite) TestListAll_HostOnlyEmitsHint() {
+	suite.Require().NoError(suite.runCommand("init"))
+	suite.stdout.Reset()
+
+	vimrc := filepath.Join(suite.tempDir, ".vimrc")
+	suite.Require().NoError(os.WriteFile(vimrc, []byte("set number"), 0644))
+	suite.Require().NoError(suite.runCommand("add", "--host", "work", vimrc))
+	suite.stdout.Reset()
+
+	err := suite.runCommand("list", "--all")
+	suite.NoError(err)
+	output := suite.stdout.String()
+
+	suite.Contains(output, "Host: work")
+	suite.Contains(output, "lnk pull --host work")
+	suite.Contains(output, "(no files)", "Empty common section should still render")
+}
+
+// TASK5: Safety visibility & no-remote status
+
+// TestStatusCommand_NoRemote_DirtyShowsLocalState verifies that running
+// `lnk status` against a repo with no remote configured still reports the
+// dirty state and points the user at the right next step (adding a remote).
+func (suite *CLITestSuite) TestStatusCommand_NoRemote_DirtyShowsLocalState() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	// Make the working tree dirty by editing the managed file.
+	err = os.WriteFile(testFile, []byte("export PATH=/usr/local/bin"), 0644)
+	suite.Require().NoError(err)
+
+	err = suite.runCommand("status")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Repository has uncommitted changes")
+	suite.Contains(output, "No remote configured")
+	suite.Contains(output, "git remote add origin")
+}
+
+// TestStatusCommand_NoRemote_CleanShowsLocalCommits verifies that a clean
+// repo with local commits but no remote reports those commits as local-only
+// instead of failing.
+func (suite *CLITestSuite) TestStatusCommand_NoRemote_CleanShowsLocalCommits() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	err = suite.runCommand("status")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Working tree is clean")
+	suite.Contains(output, "No remote configured")
+	suite.Contains(output, "1 local commit")
+	suite.Contains(output, "git remote add origin")
+}
+
+// TestRemoveCommand_ForceMessagingExplainsTrackingCleanup verifies that the
+// success output for `rm --force` makes it clear nothing was restored to the
+// user's home directory — this is tracking cleanup, not a normal restore.
+func (suite *CLITestSuite) TestRemoveCommand_ForceMessagingExplainsTrackingCleanup() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+
+	testFile := filepath.Join(suite.tempDir, ".bashrc")
+	err = os.WriteFile(testFile, []byte("export PATH"), 0644)
+	suite.Require().NoError(err)
+	err = suite.runCommand("add", testFile)
+	suite.Require().NoError(err)
+
+	// Simulate user mistake: delete the symlink without `lnk rm`.
+	err = os.Remove(testFile)
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	err = suite.runCommand("rm", "--force", testFile)
+	suite.Require().NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Force removed")
+	suite.Contains(output, "Tracking cleanup only")
+	suite.Contains(output, "no file was restored")
+	suite.NotContains(output, "Original file restored")
+}
+
+// TestRemoveCommand_HelpText_ExplainsForceIsTrackingCleanup verifies the
+// command help text distinguishes --force as tracking cleanup, so users do
+// not expect normal-restore semantics.
+func (suite *CLITestSuite) TestRemoveCommand_HelpText_ExplainsForceIsTrackingCleanup() {
+	err := suite.runCommand("rm", "--help")
+	suite.NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "tracking cleanup")
+	suite.Contains(output, "does NOT recreate")
+}
+
+// TestPullCommand_ReportsBackup verifies that `lnk pull` reports when a
+// pre-existing real file at the symlink target was renamed to .lnk-backup
+// instead of being silently overwritten.
+func (suite *CLITestSuite) TestPullCommand_ReportsBackup() {
+	// Set up a remote we can pull from.
+	remoteDir := filepath.Join(suite.tempDir, "remote.git")
+	suite.Require().NoError(os.MkdirAll(remoteDir, 0755))
+	cmd := exec.Command("git", "init", "--bare", "--initial-branch=main")
+	cmd.Dir = remoteDir
+	suite.Require().NoError(cmd.Run())
+
+	// Init the lnk repo with that remote and add a managed file so
+	// the remote has the .lnk index and stored content to pull back.
+	err := suite.runCommand("init", "--remote", remoteDir)
+	suite.Require().NoError(err)
+
+	managed := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(managed, []byte("export PATH"), 0644))
+	err = suite.runCommand("add", managed)
+	suite.Require().NoError(err)
+	err = suite.runCommand("push", "seed")
+	suite.Require().NoError(err)
+
+	// Replace the symlink with a real file so RestoreSymlinks must back it up.
+	suite.Require().NoError(os.Remove(managed))
+	suite.Require().NoError(os.WriteFile(managed, []byte("preexisting"), 0644))
+	defer func() {
+		_ = os.Remove(managed + ".lnk-backup")
+	}()
+	suite.stdout.Reset()
+
+	err = suite.runCommand("pull")
+	suite.Require().NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Backed up 1 existing file to .lnk-backup")
+	suite.Contains(output, ".bashrc")
+	suite.Contains(output, ".lnk-backup")
+
+	// Backup file must exist with original content.
+	backup := managed + ".lnk-backup"
+	suite.FileExists(backup)
+	content, readErr := os.ReadFile(backup)
+	suite.Require().NoError(readErr)
+	suite.Equal("preexisting", string(content))
+}
+
+// TestDoctorCommand_ReportsBackup verifies that `lnk doctor` reports when
+// fixing a broken symlink required renaming a pre-existing real file to
+// .lnk-backup.
+func (suite *CLITestSuite) TestDoctorCommand_ReportsBackup() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+
+	managed := filepath.Join(suite.tempDir, ".bashrc")
+	suite.Require().NoError(os.WriteFile(managed, []byte("export PATH"), 0644))
+	err = suite.runCommand("add", managed)
+	suite.Require().NoError(err)
+
+	// Replace the symlink with a real file so doctor must back it up.
+	suite.Require().NoError(os.Remove(managed))
+	suite.Require().NoError(os.WriteFile(managed, []byte("preexisting"), 0644))
+	defer func() {
+		_ = os.Remove(managed + ".lnk-backup")
+	}()
+	suite.stdout.Reset()
+
+	err = suite.runCommand("doctor")
+	suite.Require().NoError(err)
+	output := suite.stdout.String()
+	suite.Contains(output, "Restored 1 broken symlink")
+	suite.Contains(output, "Backed up 1 existing file to .lnk-backup")
+	suite.Contains(output, ".bashrc")
+
+	// Verify the backup file actually exists.
+	suite.FileExists(managed + ".lnk-backup")
 }
 
 func TestCLISuite(t *testing.T) {

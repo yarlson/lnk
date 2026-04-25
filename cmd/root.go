@@ -29,7 +29,8 @@ func NewRootCommand() *cobra.Command {
 		Short: "🔗 Dotfiles, linked. No fluff.",
 		Long: `🔗 Lnk - Git-native dotfiles management that doesn't suck.
 
-Move your dotfiles to ~/.config/lnk, symlink them back, and use Git like normal.
+Move your dotfiles into a Git-managed repo (default: ~/.config/lnk; override with
+LNK_HOME or XDG_CONFIG_HOME), symlink them back, and use Git like normal.
 Supports both common configurations, host-specific setups, and bulk operations for multiple files.
 
 ✨ Examples:

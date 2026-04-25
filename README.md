@@ -2,7 +2,7 @@
 
 **Git-native dotfiles manager. No config files, no templates, no ceremony.**
 
-Track dotfiles across machines with one command. Lnk moves files into a Git repo (`~/.config/lnk`), symlinks them back, and stays out of your way.
+Track dotfiles across machines with one command. Lnk moves files into a Git repo (defaults to `~/.config/lnk`; override with `LNK_HOME` or `XDG_CONFIG_HOME`), symlinks them back, and stays out of your way.
 
 ```bash
 lnk init -r git@github.com:you/dotfiles.git   # clone & bootstrap
@@ -63,19 +63,25 @@ lnk add --dry-run ~/.tmux.conf            # preview first
 ### Sync
 
 ```bash
-lnk status                                # what changed
+lnk status                                # what changed (works even without remote)
 lnk diff                                  # uncommitted changes
+lnk diff --quiet                          # exit code only, no output
+lnk diff --colors always                  # force color output (useful in scripts/redirects)
 lnk push "updated vim config"             # commit & push
 lnk pull                                  # pull & restore symlinks
 lnk pull --host work                      # pull host-specific config
 ```
 
+`status` works without a remote configured — it shows local state (dirty/clean, unpushed commits) and guides you to add a remote.
+
 ### Remove
 
 ```bash
 lnk rm ~/.vimrc                           # moves file back, removes symlink
-lnk rm --force ~/.bashrc                  # clean up if symlink already gone
+lnk rm --force ~/.bashrc                  # tracking cleanup only (no file restoration)
 ```
+
+`--force` is for cleanup when the symlink is already gone (e.g., you deleted it manually). It removes the entry from `.lnk` and the stored file from the repo, but does **not** restore anything to your home directory. Use normal `lnk rm` for a full removal with restoration.
 
 ### List
 
@@ -91,6 +97,8 @@ lnk list --all                            # everything
 lnk doctor --dry-run                      # preview issues
 lnk doctor                                # fix broken symlinks & stale entries
 ```
+
+When restoring symlinks, if a real file exists at the target location (not a symlink), it will be renamed to `<path>.lnk-backup` to preserve your data before the symlink is created. Check for `.lnk-backup` files after running `doctor` or `pull` if you expect them.
 
 ### Bootstrap
 
@@ -125,6 +133,16 @@ That's it. Bootstrap runs automatically, symlinks get restored, you're working.
 | `pull [--host H]`                                  | Pull and restore symlinks                   |
 | `doctor [--host H] [--dry-run]`                    | Find and fix repo health issues             |
 | `bootstrap`                                        | Run bootstrap.sh from repo                  |
+
+## Global Options
+
+Available with all commands:
+
+| Option                       | Default | What it does                                                  |
+| ---------------------------- | ------- | ------------------------------------------------------------- |
+| `--colors auto\|always\|never` | `auto`    | Control color output (auto: based on terminal detection)     |
+| `--emoji`, `--no-emoji`        | enabled | Enable/disable emoji in output                               |
+| `--quiet` or `-q`              | off     | Suppress all output (useful in scripts, exit code only)       |
 
 ## Why lnk over alternatives
 

@@ -45,3 +45,4 @@ desktop.ini
 # GoReleaser artifacts
 goreleaser/
 /target/
+.snap/

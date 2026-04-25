@@ -16,6 +16,13 @@ Conventions and invariants that are enforced by code or test, not aspirational s
 - `--emoji` and `--no-emoji` are mutually exclusive (enforced via Cobra `MarkFlagsMutuallyExclusive`).
 - `--quiet`/`-q` suppresses all `Writer` output; the only signal is the exit code.
 - Auto-detection of TTY happens once on first use; explicit flags pin the config and skip detection.
+- Progress updates with carriage-return redraws only appear when output is a terminal (`Writer.IsTerminal()`). In piped or redirected contexts, progress text is omitted entirely to prevent log corruption.
+
+## Path display
+
+- **Storage paths** shown in CLI output use `lnk.FormatManagedPath(host, originalPath)` to ensure consistent formatting across commands. `FormatManagedPath` computes the canonical storage location (accounting for host scoping), then displays it home-relative (with `~`) or `/`-stripped for paths outside `$HOME`.
+- **Source paths** in preview and batch output use `displaySourcePath` to render home-relative paths (~/dir/file), allowing files with identical basenames in different directories to remain disambiguated. Falls back to the original input on path resolution failure.
+- When listing many files in batch output, only the first 5 entries are shown in detail, followed by "... and N more files" to keep output compact and readable.
 
 ## Repo-path resolution
 

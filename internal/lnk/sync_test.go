@@ -37,8 +37,9 @@ func (suite *CoreTestSuite) TestSymlinkRestoration() {
 	suite.Require().NoError(err)
 
 	// Should have restored the symlink
-	suite.Len(restored, 1)
-	suite.Equal(".bashrc", restored[0])
+	suite.Len(restored.Restored, 1)
+	suite.Equal(".bashrc", restored.Restored[0])
+	suite.Empty(restored.BackedUp)
 
 	// Check that file is now a symlink
 	info, err := os.Lstat(targetFile)
@@ -301,8 +302,8 @@ func (suite *CoreTestSuite) TestMultihostSymlinkRestoration() {
 	suite.Require().NoError(err)
 
 	// Should have restored the symlink
-	suite.Len(restored, 1)
-	suite.Equal(".bashrc", restored[0])
+	suite.Len(restored.Restored, 1)
+	suite.Equal(".bashrc", restored.Restored[0])
 
 	// Check that file is now a symlink
 	info, err := os.Lstat(targetFile)
@@ -559,7 +560,8 @@ func (suite *CoreTestSuite) TestRestoreSymlinksBackupsExistingFile() {
 	// Restore symlinks — should back up the existing file
 	restored, err := suite.lnk.RestoreSymlinks()
 	suite.Require().NoError(err)
-	suite.Len(restored, 1)
+	suite.Len(restored.Restored, 1)
+	suite.Equal([]string{".bashrc"}, restored.BackedUp)
 
 	// Target should now be a symlink
 	info, err := os.Lstat(targetFile)
