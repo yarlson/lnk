@@ -45,7 +45,7 @@ The CLI separates the two outcomes (`Restored N symlinks: ...` vs. `All symlinks
 
 - Default — common configuration only.
 - `--host H` — that single host.
-- `--all` — common, then every host found by enumerating `.lnk.*` files at the repo root, each rendered as its own section.
+- `--all` — common, then every host found by enumerating `.lnk.*` files at the repo root, each rendered as its own section. For each host section, the CLI emits a `lnk pull --host <host>` hint to guide restoration.
 
 `lnk list` requires a Git repo at the repo path (same `ErrNotInitialized` check). The list does not verify that managed items still exist or that their symlinks are healthy — that's the job of `lnk doctor`.
 
