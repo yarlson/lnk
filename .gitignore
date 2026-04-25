@@ -44,6 +44,4 @@ desktop.ini
 
 # GoReleaser artifacts
 goreleaser/
-*.md
-!/README.md
 /target/
