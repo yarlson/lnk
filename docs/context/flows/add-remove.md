@@ -26,17 +26,25 @@ Routes to `AddMultiple`, which runs three explicit phases:
 
 - **validatePaths** — for every path: validate, compute abs+relative, reject duplicates against the index, capture stat. Pure read-only; any failure aborts before touching the filesystem.
 - **processFiles** — for each validated file: ensure the destination directory, move into place, create the relative symlink, append to the index, push a rollback action onto a stack. Any failure unwinds the stack via `RollbackAll` (reverse order: delete symlink, remove index entry, move back).
-- **commitFiles** — `git add` every storage path, `git add` the index file, then a single `git.Commit("lnk: added N files")` (or `... recursively`). On any failure, `RollbackAll` plus an error.
+- **commitFiles** — `git add` every storage path, `git add` the index file, then a single `git.Commit("lnk: added N files")`. On any failure, `RollbackAll` plus an error.
 
 The result is exactly one commit per CLI invocation, even with hundreds of files.
+
+Success output lists up to 5 source files, rendered home-relative (~/dir/file) via `displaySourcePath` to disambiguate files with identical basenames in different directories. If more than 5 files were added, additional files are collapsed into "... and N more files".
 
 ## Recursive add (`lnk add --recursive <dir>...`)
 
 `AddRecursiveWithProgress` walks each path with `filepath.Walk`, collecting regular files and symlinks into a flat list, then forwards to `AddMultiple`. If the total exceeds 10 files (`progressThreshold`) and the caller passes a progress callback, progress is reported per file; otherwise progress is skipped to keep tests deterministic.
 
+Progress updates with carriage-return redraws (format: `⏳ Processing N/Total: file`) are only emitted when output is a terminal (`Writer.IsTerminal()`). In non-TTY contexts (piped output), progress text is omitted entirely.
+
+Success output lists the first 5 files with source paths rendered home-relative (~/dir/file). If more than 5 files were added, remaining files are collapsed into "... and N more files" to keep the listing compact.
+
 ## Dry run (`lnk add --dry-run`)
 
 `PreviewAdd` runs the validation pass only — walking directories iff `recursive` — and returns the list of files that would be added. It uses the same duplicate-check against the index but performs no moves, no symlinks, no Git operations.
+
+Output displays all files using `displaySourcePath`, which renders paths as home-relative (~/dir/file) to disambiguate files with identical basenames in different directories. The dry-run preview is not truncated; all matched files are shown for full verification before committing changes.
 
 ## Remove (`lnk rm <file>`)
 
