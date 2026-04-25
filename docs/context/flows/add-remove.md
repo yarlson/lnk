@@ -59,6 +59,8 @@ Output displays all files using `displaySourcePath`, which renders paths as home
 7. `git.Add(<index file>)`, `git.Commit("lnk: removed <basename>")`.
 8. `fs.Move(target, absPath, info)` — restore the original file or directory in place of the symlink.
 
+Output displays the removal summary with path formatting and confirms the original file was restored. When `--host` is set, the host name is included in the success message.
+
 ## Force remove (`lnk rm --force <file>`)
 
-`RemoveForce` is for cases where the symlink is already gone or pointing nowhere useful. It skips the symlink validation, best-effort-removes the symlink, removes the index entry, best-effort `git rm --cached`, commits `lnk: force removed <basename>`, then deletes the storage copy under the repo path with `os.RemoveAll`. There is no original file to restore in this path.
+`RemoveForce` is for cases where the symlink is already gone or pointing nowhere useful. It skips the symlink validation, best-effort-removes the symlink, removes the index entry, best-effort `git rm --cached`, commits `lnk: force removed <basename>`, then deletes the storage copy under the repo path with `os.RemoveAll`. There is no original file to restore in this path. Output explicitly states "Tracking cleanup only — no file was restored to your home directory" so the user understands the asymmetry. When `--host` is set, the host name is included in the message.
