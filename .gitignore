@@ -1,25 +1,5 @@
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-/lnk
-
-# Test binary, built with `go test -c`
-*.test
-
-# Output of the go coverage tool
-*.out
-*.html
-
-# Go workspace file
-go.work
-go.work.sum
-
-# Build artifacts
-dist/
-bin/
+# Rust build artifacts
+/target/
 
 # IDE and editor files
 .vscode/
@@ -41,8 +21,3 @@ desktop.ini
 # Temporary files
 *.tmp
 *.log
-
-# GoReleaser artifacts
-goreleaser/
-/target/
-.snap/

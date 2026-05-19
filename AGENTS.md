@@ -6,7 +6,7 @@
 
 - Start with `DESIGN.md`.
 - Treat `DESIGN.md` as the product contract for v2.
-- Treat current Go code and `docs/context/` as legacy/reference unless `DESIGN.md` says otherwise.
+- Treat deleted Go history as migration reference only.
 - Do not preserve old Go/v1 behavior by default.
 - Do not add architecture prose, handoff notes, or parallel design docs.
 - If the design changes, update `DESIGN.md` in the same change.

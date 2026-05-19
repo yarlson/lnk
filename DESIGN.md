@@ -5,8 +5,8 @@
 This document defines the draft v2 product and architecture direction for
 `lnk`.
 
-The old v2 host-scope design is replaced. The current Go `v2/` prototype is a
-read-only reference for implementation lessons, not the product contract.
+The old v2 host-scope design is replaced. Deleted Go history is migration
+reference only, not the product contract.
 
 v2 is a Rust implementation line. It should keep the same product qualities
 that made v1 useful: Git-backed state, inspectable files, low ceremony, and no
@@ -656,8 +656,8 @@ Rules:
 - Local state read/write lives in `state`.
 - Migration logic lives in `migrate`.
 
-Avoid mirroring the current Go `v2/cmd/root.go` and `v2/service/service.go`
-shape. Those files are too large and should be treated as a warning.
+Avoid reviving the deleted Go v2 shape. Large command or service files are a
+known failure mode for this repo.
 
 ## Test Strategy
 
