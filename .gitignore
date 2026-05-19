@@ -21,3 +21,4 @@ desktop.ini
 # Temporary files
 *.tmp
 *.log
+/codex-logs/
