@@ -37,6 +37,42 @@ The primary user is a Git-fluent developer who wants one repo to carry
 machine setup state across machines without turning that repo into a private
 configuration platform.
 
+## Primary Workflow
+
+The common path should require one main command after the repo exists:
+
+```text
+lnk apply base mac work
+```
+
+That command:
+
+- validates the selected profiles
+- stores them as this machine's profile list
+- applies their files
+- records applied targets in local state
+
+After that, normal repeated use is:
+
+```text
+lnk apply
+lnk status
+lnk run setup
+```
+
+`lnk apply` without profile arguments uses this machine's stored profile list.
+Scripts stay explicit through `lnk run`; applying files never runs scripts.
+
+Preview uses the same command:
+
+```text
+lnk apply --dry-run base mac work
+```
+
+There is no separate "select profiles" command and no separate "plan" command.
+The tool has one obvious mutation path, and dry-run is the non-mutating version
+of that path.
+
 ## Design Goals
 
 v2 should optimize for:
@@ -149,7 +185,7 @@ Profile manifest schema:
 [files."<source-path-under-files>"]
 target = "<home-relative-target>"     # optional; defaults to the source path
 mode = "symlink"                      # optional; symlink or copy
-overrides = "<profile>:<target-path>" # optional explicit override
+overrides = "<profile>"               # optional explicit override of one profile
 
 [scripts."<script-name>"]
 platforms = ["macos", "linux"]        # optional; macos, linux, windows
@@ -160,7 +196,8 @@ Rules:
 - `files` keys are paths relative to `profiles/<profile>/files/`.
 - `target` values are paths relative to `$HOME`.
 - `mode` defaults to `symlink`.
-- `overrides` names the earlier profile target this file intentionally replaces.
+- `overrides` names the earlier profile whose same target this file intentionally
+  replaces.
 - `scripts` keys are script names under `profiles/<profile>/scripts/`.
 - `platforms` gates script execution by Rust's `std::env::consts::OS`.
 - unknown fields are errors.
@@ -207,7 +244,7 @@ mode = "copy"
 
 [files.".ssh/config"]
 target = ".ssh/config"
-overrides = "base:.ssh/config"
+overrides = "base"
 ```
 
 Targets must stay inside `$HOME`. v2 does not support system paths.
@@ -240,10 +277,13 @@ Explicit override makes profile order visible and reviewable:
 
 ```toml
 [files.".gitconfig"]
-overrides = "base:.gitconfig"
+overrides = "base"
 ```
 
 The override declaration belongs to the overriding profile.
+
+The target path is implied by the file entry. Repeating it inside `overrides`
+would make users restate information the tool already knows.
 
 This prevents ordered profiles from becoming silent last-write-wins overlays.
 
@@ -252,18 +292,13 @@ This prevents ordered profiles from becoming silent last-write-wins overlays.
 If `lnk apply` sees an existing real file at a target path and that target is
 not recorded as managed by `lnk`, it must stop and report a conflict.
 
-Mutation through conflicts requires an explicit policy:
+Mutation through conflicts requires an explicit backup policy:
 
 ```text
 lnk apply --backup
-lnk apply --overwrite
 ```
 
 `--backup` renames conflicting files before applying.
-
-`--overwrite` replaces conflicting files.
-
-Both flags must be mutually exclusive.
 
 Backups are written next to the original target with a timestamped suffix:
 
@@ -282,7 +317,9 @@ For copy-mode files, apply uses local state hashes to classify drift:
 
 `--backup` backs up the live target before writing the new copy.
 
-`--overwrite` replaces the live target and records new hashes.
+There is no `--overwrite`. If a user wants to discard a live file, they should
+remove it themselves or use `--backup` and then delete the backup. A setup tool
+should not make destructive replacement feel like a normal mode.
 
 ## Scripts
 
@@ -313,9 +350,9 @@ platforms = ["macos"]
 Scripts never run as a side effect of `lnk apply`.
 
 Platform gating is enforced by `lnk run`. A script whose `platforms` list does
-not include the current platform is skipped with a terse message. `lnk profiles`
-and `lnk doctor` should also surface platform-gated scripts so users can see why
-a script will not run on this machine.
+not include the current platform is skipped with a terse message. `lnk doctor`
+validates platform names. `lnk profiles` does not need to explain script gating
+unless a future verbose mode is added.
 
 Supported execution forms:
 
@@ -417,9 +454,7 @@ The v2 command surface should stay flat:
 ```text
 lnk init
 lnk profiles
-lnk use <profile...>
-lnk plan [profile...]
-lnk apply [profile...] [--save] [--backup | --overwrite]
+lnk apply [profile...] [--dry-run] [--backup]
 lnk status
 lnk run <script>
 lnk run <profile>:<script>
@@ -456,24 +491,24 @@ It must not run scripts.
 
 List profiles found under `profiles/`.
 
-This is repo inspection only. It must not mutate the repo or machine.
+This is repo inspection only. It should also show this machine's stored profile
+list when local state exists. It must not mutate the repo or machine.
 
-### `lnk use <profile...>`
+### `lnk apply [profile...]`
 
-Store this machine's active ordered profile list in local state.
+Apply files for the selected profile list.
 
-It validates that the profiles exist.
+Selection rules:
 
-It does not apply files and does not run scripts.
+- with profiles: validate, store, and apply the provided ordered list
+- without profiles: use active profiles from local state
+- with `--dry-run`: show the plan without storing profiles or changing files
 
-### `lnk plan [profile...]`
+When profiles are passed, local state is updated only after a successful
+non-dry-run apply. A failed apply must not change this machine's stored profile
+list.
 
-Show what `apply` would do.
-
-When profiles are provided, use that one-shot ordered list. Otherwise use the
-active profiles from local state.
-
-The plan should include:
+The apply plan should include:
 
 - files to symlink
 - files to copy
@@ -482,22 +517,16 @@ The plan should include:
 - copied-file drift when known
 - missing profiles or invalid metadata
 
-It must not mutate.
-
-### `lnk apply [profile...]`
-
-Apply files for the selected profile list.
-
-Selection rules:
-
-- with profiles: use the provided ordered list for this invocation
-- without profiles: use active profiles from local state
-- with `--save`: also store the provided list as active profiles
-
 `apply` mutates files only. It never runs scripts.
 
-Existing unmanaged conflicts block apply unless `--backup` or `--overwrite` is
-provided.
+Existing unmanaged conflicts block apply unless `--backup` is provided.
+
+If no profiles are passed and no local profile list exists, `apply` fails with a
+direct next step:
+
+```text
+run 'lnk apply <profile...>' first
+```
 
 ### `lnk status`
 
@@ -552,7 +581,6 @@ Human output should be terse and truthful.
 Structured commands should support JSON output:
 
 - `profiles`
-- `plan`
 - `apply`
 - `status`
 - `doctor`
@@ -564,21 +592,22 @@ Errors should have a stable JSON shape in JSON mode.
 Do not invent large result schemas for simple acknowledgements. JSON exists for
 automation, not ceremony.
 
-JSON mode is selected with a global flag:
+JSON mode is selected with a command-local advanced flag:
 
 ```text
---format text|json
+--json
 ```
 
-Default format is `text`.
+Default output is human text.
 
 Rules:
 
 - successful JSON results are written to stdout
 - JSON errors are written to stderr
 - JSON output contains no hints, color, emoji, or prose-only fields
-- commands without structured output may reject `--format json` until they have
-  a useful schema
+- only commands with structured output should expose `--json`
+- commands like `run` should not grow JSON output until there is a real
+  automation use case
 
 Stable error shape:
 
@@ -732,19 +761,22 @@ outside Git.
 - Machine profile selection lives outside Git.
 - Local state is TOML under XDG state.
 - Repo identity is root `lnk.toml`, not a hidden marker.
-- `apply` applies files only.
+- `apply <profile...>` is the primary workflow: it stores this machine's profile
+  list and applies files.
+- `apply --dry-run` replaces a separate `plan` command.
 - Script execution uses `lnk run`.
-- Existing unmanaged live files block apply unless an explicit conflict policy is
-  passed.
+- Existing unmanaged live files block apply unless `--backup` is passed.
+- There is no `use` command and no `--save`; profile selection is part of
+  `apply`.
+- There is no `--overwrite`; destructive replacement is intentionally omitted.
 - Migration is explicit, plan-first, and can mutate only with `--write --yes`.
 - Migration preserves same Git history and remotes.
 - `profile.toml` is optional, even when a profile has scripts.
-- Script platform gating is enforced by `run` and surfaced by `profiles` and
-  `doctor`.
+- Script platform gating is enforced by `run` and validated by `doctor`.
 - Backups use timestamped side-by-side files.
 - `init` creates an initial Git commit for new repos.
 - Migration removes old v1 tracking files instead of preserving a legacy copy.
-- JSON mode uses global `--format text|json`.
+- JSON mode uses command-local `--json`.
 
 ## Non-Goals
 
@@ -761,13 +793,12 @@ v2 must not include:
 - host-name-to-profile mapping stored in Git
 - compatibility aliases for every v1 command
 - deep command trees
+- destructive overwrite mode for apply
 
 ## Open Risks
 
 - Copy mode can drift. The local state hash model must be clear enough that
   users understand what `status` is reporting.
-- `--overwrite` is dangerous. It should probably be excluded from early builds
-  unless the apply planner and tests are strong.
 - Migration transforms the current branch directly. The mandatory backup tag and
   dirty-tree refusal are not optional.
 - Platform metadata can grow into a bad task runner if scripts become too
@@ -782,6 +813,8 @@ v2 must not include:
 - Prefer directory convention over manifest entries for normal symlinked files.
 - Keep `profile.toml` optional. Requiring empty manifests is clerical work.
 - Do not add repo-local machine selection. Active profiles stay outside Git.
+- Do not add a separate profile-selection command unless a real workflow needs
+  it. `apply <profile...>` already selects and applies.
 - Do not add a public `--repo` escape hatch. Use environment isolation in tests.
 - Do not run scripts from `init`, `apply`, or `migrate`.
 - Keep copy drift blocking by default. Copy mode is allowed, but local edits are
