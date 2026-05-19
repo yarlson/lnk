@@ -3,6 +3,7 @@
 ## Root
 
 - [summary](summary.md) — what lnk is and how it is built
+- [intent](intent.md) — high-level product intent, inferred goals, and open questions
 - [terminology](terminology.md) — stable terms (managed item, host scope, .lnk file)
 - [practices](practices.md) — enforced conventions and invariants
 - [architecture](architecture.md) — package layering and collaborator responsibilities
