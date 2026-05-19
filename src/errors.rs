@@ -1,8 +1,5 @@
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Error {
-    NotImplemented {
-        command: &'static str,
-    },
     MissingHome,
     InvalidHome {
         path: String,
@@ -98,6 +95,11 @@ pub enum Error {
         script: String,
         code: Option<i32>,
     },
+    MigrationConfirmationRequired,
+    MigrationDirtyTree,
+    MigrationInvalid {
+        message: &'static str,
+    },
     RepoCreateFailed {
         path: String,
         message: String,
@@ -113,13 +115,8 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn not_implemented(command: &'static str) -> Self {
-        Self::NotImplemented { command }
-    }
-
     pub fn code(&self) -> &'static str {
         match self {
-            Self::NotImplemented { .. } => "command.not_implemented",
             Self::MissingHome => "path.home_missing",
             Self::InvalidHome { .. } => "path.home_invalid",
             Self::InvalidTargetPath { .. } => "path.target_invalid",
@@ -145,6 +142,9 @@ impl Error {
             Self::ScriptMissing { .. } => "script.missing",
             Self::ScriptExecFailed { .. } => "script.exec_failed",
             Self::ScriptFailed { .. } => "script.failed",
+            Self::MigrationConfirmationRequired => "migration.confirmation_required",
+            Self::MigrationDirtyTree => "migration.dirty_tree",
+            Self::MigrationInvalid { .. } => "migration.invalid",
             Self::RepoCreateFailed { .. } => "repo.create_failed",
             Self::UnrelatedGitRepo { .. } => "repo.unrelated_git",
             Self::GitUnavailable => "git.unavailable",
@@ -154,7 +154,6 @@ impl Error {
 
     pub fn message(&self) -> &'static str {
         match self {
-            Self::NotImplemented { .. } => "command is not implemented yet",
             Self::MissingHome => "HOME is not set",
             Self::InvalidHome { .. } => "HOME must be an absolute path",
             Self::InvalidTargetPath { .. } => "target path is invalid",
@@ -180,6 +179,9 @@ impl Error {
             Self::ScriptMissing { .. } => "script does not exist",
             Self::ScriptExecFailed { .. } => "script could not be executed",
             Self::ScriptFailed { .. } => "script failed",
+            Self::MigrationConfirmationRequired => "migration write requires --yes",
+            Self::MigrationDirtyTree => "working tree must be clean before migration",
+            Self::MigrationInvalid { message } => message,
             Self::RepoCreateFailed { .. } => "repo directory could not be created",
             Self::UnrelatedGitRepo { .. } => {
                 "existing Git repo has commits but no lnk.toml; use 'lnk migrate v1' or an empty directory"
@@ -191,7 +193,6 @@ impl Error {
 
     pub fn command(&self) -> Option<&'static str> {
         match self {
-            Self::NotImplemented { command } => Some(command),
             Self::MissingHome
             | Self::InvalidHome { .. }
             | Self::InvalidTargetPath { .. }
@@ -217,6 +218,9 @@ impl Error {
             | Self::ScriptMissing { .. }
             | Self::ScriptExecFailed { .. }
             | Self::ScriptFailed { .. }
+            | Self::MigrationConfirmationRequired
+            | Self::MigrationDirtyTree
+            | Self::MigrationInvalid { .. }
             | Self::RepoCreateFailed { .. }
             | Self::UnrelatedGitRepo { .. }
             | Self::GitUnavailable

@@ -9,6 +9,7 @@ pub enum Output {
     Empty,
     ApplyPlan(ApplyPlanOutput),
     Doctor(DoctorOutput),
+    MigrationPlan(MigrationPlanOutput),
     Profiles(ProfilesOutput),
     Status(StatusOutput),
 }
@@ -76,6 +77,39 @@ pub struct DoctorIssueOutput {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<StatusTargetStatus>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationPlanOutput {
+    pub backup_tag: String,
+    pub commit_message: String,
+    pub local_profiles: Vec<String>,
+    pub actions: Vec<MigrationActionOutput>,
+    pub wrote: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MigrationActionOutput {
+    WriteRootManifest,
+    MoveFile {
+        source: String,
+        target: String,
+    },
+    MoveScript {
+        source: String,
+        target: String,
+    },
+    WriteOverride {
+        profile: String,
+        target: String,
+        overrides: String,
+    },
+    RemoveTrackingFile {
+        path: String,
+    },
+    RemoveEmptyHostDir {
+        path: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

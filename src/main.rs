@@ -29,6 +29,10 @@ fn render(
             render_doctor(output_format, &output);
             std::process::ExitCode::SUCCESS
         }
+        Ok(lnk::app::Output::MigrationPlan(output)) => {
+            render_migration_plan(&output);
+            std::process::ExitCode::SUCCESS
+        }
         Ok(lnk::app::Output::Profiles(output)) => {
             render_profiles(output_format, &output);
             std::process::ExitCode::SUCCESS
@@ -41,6 +45,45 @@ fn render(
             render_error(output_format, &error);
             std::process::ExitCode::FAILURE
         }
+    }
+}
+
+fn render_migration_plan(output: &lnk::app::MigrationPlanOutput) {
+    println!("migration plan:");
+
+    for action in &output.actions {
+        match action {
+            lnk::app::MigrationActionOutput::WriteRootManifest => {
+                println!("write lnk.toml");
+            }
+            lnk::app::MigrationActionOutput::MoveFile { source, target } => {
+                println!("move {source} -> {target}");
+            }
+            lnk::app::MigrationActionOutput::MoveScript { source, target } => {
+                println!("move {source} -> {target}");
+            }
+            lnk::app::MigrationActionOutput::WriteOverride {
+                profile,
+                target,
+                overrides,
+            } => {
+                println!("override {target}: {profile} overrides {overrides}");
+            }
+            lnk::app::MigrationActionOutput::RemoveTrackingFile { path } => {
+                println!("remove {path}");
+            }
+            lnk::app::MigrationActionOutput::RemoveEmptyHostDir { path } => {
+                println!("remove empty {path}");
+            }
+        }
+    }
+
+    println!("backup tag: {}", output.backup_tag);
+    println!("commit: {}", output.commit_message);
+    println!("local profiles: {}", output.local_profiles.join(" "));
+
+    if output.wrote {
+        println!("local state written");
     }
 }
 

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{
     env,
     ffi::OsStr,
@@ -56,6 +54,7 @@ pub(crate) fn home_dir_from(home: Option<&OsStr>) -> Result<PathBuf, Error> {
     Ok(path)
 }
 
+#[cfg(test)]
 pub(crate) fn repo_dir_from(
     home: &Path,
     lnk_home: Option<&OsStr>,
@@ -86,6 +85,7 @@ pub(crate) fn repo_dir_from_env(
     Ok(home_dir_from(home)?.join(".config").join("lnk"))
 }
 
+#[cfg(test)]
 pub(crate) fn state_file_from(home: &Path, xdg_state_home: Option<&OsStr>) -> PathBuf {
     xdg_dir_from(xdg_state_home)
         .unwrap_or_else(|| home.join(".local").join("state"))

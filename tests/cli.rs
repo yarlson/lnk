@@ -1,4 +1,5 @@
 use assert_cmd::Command as AssertCommand;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -61,6 +62,16 @@ fn git_in<const N: usize>(repo: &Path, args: [&str; N]) -> String {
 fn commit_all(repo: &Path, message: &str) {
     git_in(repo, ["add", "."]);
     git_in(repo, ["commit", "-m", message]);
+}
+
+fn write_repo_file(repo: &Path, relative: &str, contents: &str) {
+    let path = repo.join(relative);
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("repo file parent should be created");
+    }
+
+    fs::write(path, contents).expect("repo file should write");
 }
 
 fn write_root_manifest(repo: &Path) {
@@ -149,6 +160,10 @@ fn write_state(state_home: &Path, active_profiles: &[&str]) {
 fn state_contents(state_home: &Path) -> String {
     fs::read_to_string(state_home.join("lnk").join("machine.toml"))
         .expect("state file should exist")
+}
+
+fn json_stdout(assert: &assert_cmd::assert::Assert) -> Value {
+    serde_json::from_slice(&assert.get_output().stdout).expect("stdout should be valid JSON")
 }
 
 fn write_state_with_copy_target(
@@ -287,18 +302,6 @@ fn unsupported_flags_are_rejected() {
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
 
     assert!(stderr.contains("--save"), "{stderr}");
-}
-
-#[test]
-fn phase_2_commands_reach_domain_boundary() {
-    let cases: &[&[&str]] = &[&["migrate", "v1"], &["migrate", "v1", "--write", "--yes"]];
-
-    for args in cases {
-        let assert = lnk().args(*args).assert().code(1);
-        let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
-
-        assert_eq!("error: command is not implemented yet\n", stderr);
-    }
 }
 
 #[test]
@@ -487,6 +490,182 @@ fn structured_repo_commands_render_missing_git_as_json() {
             stderr
         );
     }
+}
+
+#[test]
+fn phase_16_end_to_end_product_flow() {
+    let temp = TempDir::new("phase-16-flow");
+    let repo = temp.path().join("repo");
+    let home = temp.path().join("home");
+    let state_home = temp.path().join("state");
+    let script_marker = temp.path().join("setup-ran");
+
+    fs::create_dir_all(&home).expect("home should be created");
+
+    lnk_with_git_identity()
+        .env("LNK_HOME", &repo)
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", &state_home)
+        .arg("init")
+        .assert()
+        .success();
+
+    write_profile_file(&repo, "base", ".zshrc", "export LNK_PHASE=16\n");
+    write_profile_script(
+        &repo,
+        "base",
+        "setup",
+        &format!(
+            "#!/bin/sh\nprintf 'setup ran\\n'\nprintf 'run\\n' >> {}\n",
+            script_marker.display()
+        ),
+    );
+
+    lnk()
+        .env("LNK_HOME", &repo)
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", &state_home)
+        .args(["apply", "base"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        repo.join("profiles/base/files/.zshrc"),
+        fs::read_link(home.join(".zshrc")).expect("profile file should be symlinked")
+    );
+    assert!(
+        !script_marker.exists(),
+        "apply must not run profile scripts"
+    );
+
+    let status = lnk()
+        .env("LNK_HOME", &repo)
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", &state_home)
+        .arg("status")
+        .assert()
+        .success();
+    let status_stdout = String::from_utf8_lossy(&status.get_output().stdout);
+
+    assert!(
+        status_stdout.contains("status:\nrepo: dirty"),
+        "{status_stdout}"
+    );
+    assert!(
+        status_stdout.contains("active profiles:\nbase"),
+        "{status_stdout}"
+    );
+    assert!(
+        status_stdout.contains("clean .zshrc <- profiles/base/files/.zshrc (base, symlink)"),
+        "{status_stdout}"
+    );
+
+    let run = lnk()
+        .env("LNK_HOME", &repo)
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", &state_home)
+        .args(["run", "setup"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        "setup ran\n",
+        String::from_utf8_lossy(&run.get_output().stdout)
+    );
+    assert_eq!(
+        "run\n",
+        fs::read_to_string(&script_marker).expect("setup script should write marker")
+    );
+
+    lnk()
+        .env("LNK_HOME", &repo)
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", &state_home)
+        .arg("apply")
+        .assert()
+        .success();
+
+    assert_eq!(
+        "run\n",
+        fs::read_to_string(&script_marker).expect("reapply must not rerun setup")
+    );
+
+    let profiles_json = lnk()
+        .env("LNK_HOME", &repo)
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", &state_home)
+        .args(["profiles", "--json"])
+        .assert()
+        .success();
+    assert_eq!(
+        json!({"profiles":["base"],"active_profiles":["base"]}),
+        json_stdout(&profiles_json)
+    );
+
+    let apply_json = lnk()
+        .env("LNK_HOME", &repo)
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", &state_home)
+        .args(["apply", "--dry-run", "--json"])
+        .assert()
+        .success();
+    assert_eq!(
+        json!({
+            "profiles": ["base"],
+            "dry_run": true,
+            "backup": false,
+            "actions": [{
+                "action": "symlink",
+                "profile": "base",
+                "source": "profiles/base/files/.zshrc",
+                "target": ".zshrc"
+            }]
+        }),
+        json_stdout(&apply_json)
+    );
+
+    let status_json = lnk()
+        .env("LNK_HOME", &repo)
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", &state_home)
+        .args(["status", "--json"])
+        .assert()
+        .success();
+    let status_json = json_stdout(&status_json);
+
+    assert_eq!(json!(["base"]), status_json["active_profiles"]);
+    assert_eq!(json!(true), status_json["repo_dirty"]);
+    assert!(
+        status_json["repo_changes"]
+            .as_array()
+            .expect("repo_changes should be an array")
+            .iter()
+            .any(|change| change.as_str().is_some_and(|change| {
+                change.contains("profiles/base/files/.zshrc")
+                    || change.contains("profiles/base/files/")
+                    || change.contains("profiles/")
+            })),
+        "{status_json}"
+    );
+    assert_eq!(
+        json!([{
+            "target": ".zshrc",
+            "profile": "base",
+            "source": "profiles/base/files/.zshrc",
+            "mode": "symlink",
+            "status": "clean"
+        }]),
+        status_json["targets"]
+    );
+
+    let doctor_json = lnk()
+        .env("LNK_HOME", &repo)
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", &state_home)
+        .args(["doctor", "--json"])
+        .assert()
+        .success();
+    assert_eq!(json!({"issues":[]}), json_stdout(&doctor_json));
 }
 
 #[test]
@@ -2209,6 +2388,234 @@ fn profiles_json_renders_manifest_errors_as_json() {
     assert_eq!(
         "{\"error\":{\"code\":\"schema.invalid\",\"message\":\"schema file is invalid\"}}\n",
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn migrate_v1_dry_run_prints_plan_without_mutating_repo_or_state() {
+    let temp = TempDir::new("migrate-dry-run");
+    let repo = temp.path().join("repo");
+    let state_home = temp.path().join("state");
+
+    git_init(&repo);
+    write_repo_file(&repo, ".lnk", ".zshrc\n");
+    write_repo_file(&repo, ".zshrc", "repo zshrc\n");
+    write_repo_file(&repo, ".lnk.work", ".ssh/config\n");
+    write_repo_file(&repo, "work.lnk/.ssh/config", "host ssh\n");
+    write_repo_file(&repo, "bootstrap.sh", "#!/bin/sh\nexit 42\n");
+    commit_all(&repo, "v1 setup");
+
+    let assert = lnk()
+        .env("LNK_HOME", &repo)
+        .env("XDG_STATE_HOME", &state_home)
+        .env("HOSTNAME", "work")
+        .args(["migrate", "v1"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+
+    assert!(stdout.contains("migration plan:\n"), "{stdout}");
+    assert!(
+        stdout.contains("move .zshrc -> profiles/base/files/.zshrc"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("move work.lnk/.ssh/config -> profiles/work/files/.ssh/config"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("move bootstrap.sh -> profiles/base/scripts/setup"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("backup tag: lnk-v1-backup-"), "{stdout}");
+    assert!(stdout.contains("local profiles: base work"), "{stdout}");
+    assert!(!repo.join("lnk.toml").exists());
+    assert!(!repo.join("profiles").exists());
+    assert_eq!("", git_in(&repo, ["tag", "--list"]));
+    assert!(!state_home.join("lnk/machine.toml").exists());
+}
+
+#[test]
+fn migrate_v1_write_refuses_dirty_working_tree_before_mutation() {
+    let temp = TempDir::new("migrate-dirty");
+    let repo = temp.path().join("repo");
+    let state_home = temp.path().join("state");
+
+    git_init(&repo);
+    write_repo_file(&repo, ".lnk", ".zshrc\n");
+    write_repo_file(&repo, ".zshrc", "repo zshrc\n");
+    commit_all(&repo, "v1 setup");
+    fs::write(repo.join(".zshrc"), "dirty zshrc\n").expect("tracked file should be dirty");
+
+    let assert = lnk_with_git_identity()
+        .env("LNK_HOME", &repo)
+        .env("XDG_STATE_HOME", &state_home)
+        .args(["migrate", "v1", "--write", "--yes"])
+        .assert()
+        .failure();
+
+    assert_eq!(
+        "error: working tree must be clean before migration\n",
+        String::from_utf8_lossy(&assert.get_output().stderr)
+    );
+    assert!(!repo.join("lnk.toml").exists());
+    assert_eq!("", git_in(&repo, ["tag", "--list"]));
+    assert!(!state_home.join("lnk/machine.toml").exists());
+}
+
+#[test]
+fn migrate_v1_write_transforms_repo_commits_backup_tag_and_local_state() {
+    let temp = TempDir::new("migrate-write");
+    let repo = temp.path().join("repo");
+    let state_home = temp.path().join("state");
+    let marker = temp.path().join("bootstrap-ran");
+
+    git_init(&repo);
+    git_in(
+        &repo,
+        [
+            "remote",
+            "add",
+            "origin",
+            "git@example.invalid:dotfiles.git",
+        ],
+    );
+    write_repo_file(&repo, ".lnk", ".zshrc\n.gitconfig\n");
+    write_repo_file(&repo, ".zshrc", "repo zshrc\n");
+    write_repo_file(&repo, ".gitconfig", "base gitconfig\n");
+    write_repo_file(&repo, ".lnk.work", ".gitconfig\n.ssh/config\n");
+    write_repo_file(&repo, "work.lnk/.gitconfig", "work gitconfig\n");
+    write_repo_file(&repo, "work.lnk/.ssh/config", "host ssh\n");
+    write_repo_file(
+        &repo,
+        "bootstrap.sh",
+        &format!("#!/bin/sh\ntouch {}\n", marker.display()),
+    );
+    commit_all(&repo, "v1 setup");
+    let original_head = git_in(&repo, ["rev-parse", "HEAD"]);
+
+    let assert = lnk_with_git_identity()
+        .env("LNK_HOME", &repo)
+        .env("XDG_STATE_HOME", &state_home)
+        .env("HOSTNAME", "work")
+        .args(["migrate", "v1", "--write", "--yes"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+
+    assert!(stdout.contains("local state written"), "{stdout}");
+    assert_eq!(
+        "format = 1\nname = \"repo\"\n",
+        fs::read_to_string(repo.join("lnk.toml")).expect("root manifest should exist")
+    );
+    assert_eq!(
+        "repo zshrc\n",
+        fs::read_to_string(repo.join("profiles/base/files/.zshrc"))
+            .expect("base zshrc should move")
+    );
+    assert_eq!(
+        "base gitconfig\n",
+        fs::read_to_string(repo.join("profiles/base/files/.gitconfig"))
+            .expect("base gitconfig should move")
+    );
+    assert_eq!(
+        "work gitconfig\n",
+        fs::read_to_string(repo.join("profiles/work/files/.gitconfig"))
+            .expect("host gitconfig should move")
+    );
+    assert_eq!(
+        "host ssh\n",
+        fs::read_to_string(repo.join("profiles/work/files/.ssh/config"))
+            .expect("host ssh config should move")
+    );
+    assert_eq!(
+        format!("#!/bin/sh\ntouch {}\n", marker.display()),
+        fs::read_to_string(repo.join("profiles/base/scripts/setup"))
+            .expect("bootstrap should move to setup script")
+    );
+    assert!(!marker.exists(), "migration must not run bootstrap");
+    assert!(!repo.join(".lnk").exists());
+    assert!(!repo.join(".lnk.work").exists());
+    assert!(!repo.join("bootstrap.sh").exists());
+    assert!(!repo.join("work.lnk").exists());
+
+    let profile_manifest =
+        fs::read_to_string(repo.join("profiles/work/profile.toml")).expect("manifest should exist");
+    assert!(
+        profile_manifest.contains("[files.\".gitconfig\"]\noverrides = \"base\""),
+        "{profile_manifest}"
+    );
+
+    let state = state_contents(&state_home);
+    assert!(
+        state.contains("\"base\"") && state.contains("\"work\""),
+        "{state}"
+    );
+    assert!(state.contains("targets = []"), "{state}");
+
+    let tag = git_in(&repo, ["tag", "--list", "lnk-v1-backup-*"]);
+    let tag = tag.trim();
+    assert!(tag.starts_with("lnk-v1-backup-"), "{tag}");
+    assert_eq!(original_head, git_in(&repo, ["rev-parse", tag]));
+    assert_eq!(
+        "git@example.invalid:dotfiles.git\n",
+        git_in(&repo, ["remote", "get-url", "origin"])
+    );
+    assert_eq!(
+        "lnk: migrate v1 setup repo\n",
+        git_in(&repo, ["log", "-1", "--format=%s"])
+    );
+    assert_eq!("2\n", git_in(&repo, ["rev-list", "--count", "HEAD"]));
+    assert_eq!("", git_in(&repo, ["status", "--porcelain"]));
+}
+
+#[test]
+fn migrate_v1_write_makes_host_only_state_immediately_applicable() {
+    let temp = TempDir::new("migrate-host-only");
+    let repo = temp.path().join("repo");
+    let home = temp.path().join("home");
+    let state_home = temp.path().join("state");
+
+    git_init(&repo);
+    fs::create_dir_all(&home).expect("home should be created");
+    write_repo_file(&repo, ".lnk.work", ".vimrc\n");
+    write_repo_file(&repo, "work.lnk/.vimrc", "set number\n");
+    commit_all(&repo, "v1 host setup");
+
+    lnk_with_git_identity()
+        .env("HOME", &home)
+        .env("LNK_HOME", &repo)
+        .env("XDG_STATE_HOME", &state_home)
+        .env("HOSTNAME", "work")
+        .args(["migrate", "v1", "--write", "--yes"])
+        .assert()
+        .success();
+
+    assert!(repo.join("profiles/base/files").is_dir());
+    assert!(repo.join("profiles/base/scripts").is_dir());
+    assert!(repo.join("profiles/base/profile.toml").is_file());
+    assert!(repo.join("profiles/work/files/.vimrc").is_file());
+    assert!(
+        git_in(&repo, ["ls-tree", "-r", "--name-only", "HEAD"])
+            .contains("profiles/base/profile.toml")
+    );
+    let state = state_contents(&state_home);
+    assert!(
+        state.contains("\"base\"") && state.contains("\"work\""),
+        "{state}"
+    );
+
+    let assert = lnk()
+        .env("HOME", &home)
+        .env("LNK_HOME", &repo)
+        .env("XDG_STATE_HOME", &state_home)
+        .args(["apply", "--dry-run"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(
+        stdout.contains("symlink .vimrc <- profiles/work/files/.vimrc (work)"),
+        "{stdout}"
     );
 }
 

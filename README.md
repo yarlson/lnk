@@ -209,17 +209,17 @@ run only when requested, and you're working.
 
 ## Migration from v1
 
-v2 keeps migration explicit and plan-first. The intended command surface is:
+v2 keeps migration explicit and plan-first:
 
 ```bash
 lnk migrate v1
 lnk migrate v1 --write --yes
 ```
 
-Migration is not implemented in the current Rust binary yet; the command
-currently reports that directly.
+The read-only form prints the plan. The write form mutates the current Git
+branch only after `--write --yes`.
 
-The planned v1 mapping is:
+The v1 mapping is:
 
 - `.lnk` becomes profile `base`
 - `.lnk.<host>` becomes profile `<host>`

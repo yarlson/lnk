@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{collections::BTreeSet, fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
@@ -25,12 +23,6 @@ pub(crate) struct TargetState {
     pub(crate) source_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) applied_hash: Option<String>,
-}
-
-pub(crate) fn read_state(path: &Path) -> Result<MachineState, Error> {
-    let contents = fs::read_to_string(path).map_err(|error| read_error(path, error))?;
-
-    parse_state(&contents, path)
 }
 
 pub(crate) fn read_state_if_exists(path: &Path) -> Result<Option<MachineState>, Error> {

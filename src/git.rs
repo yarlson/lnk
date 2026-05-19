@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{
     ffi::{OsStr, OsString},
     io,
@@ -77,6 +75,7 @@ pub(crate) fn commit_paths(repo: &Path, message: &str, pathspecs: &[&str]) -> Re
     run_in_repo(repo, args)?.require_success()
 }
 
+#[cfg(test)]
 pub(crate) fn add_and_commit(repo: &Path, message: &str) -> Result<(), Error> {
     add_all(repo)?;
     commit(repo, message)
