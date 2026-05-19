@@ -9,9 +9,9 @@ surface flat, and ends with concrete checks.
 - `rustc --version`: `rustc 1.93.1 (01f6ddf75 2026-02-11)`
 - `cargo --version`: `cargo 1.93.1 (083ac5135 2025-12-15)`
 - `git --version`: `git version 2.53.0`
-- `cargo nextest --version`: unavailable locally
+- `cargo nextest --version`: `cargo-nextest 0.9.136 (1d5bf1ec9 2026-05-16)`
 
-`cargo nextest` must be installed before Rust implementation work is finalized,
+`cargo nextest` is required before Rust implementation work is finalized,
 because `AGENTS.md` requires it and nextest does not run doctests; doctests stay
 a separate `cargo test --doc --all-features` gate.
 

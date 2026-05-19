@@ -1,0 +1,4 @@
+[files.".gitconfig"]
+target = ".gitconfig"
+mode = "copy"
+checksum = true

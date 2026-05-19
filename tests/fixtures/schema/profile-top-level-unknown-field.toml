@@ -1,0 +1,4 @@
+label = "base"
+
+[files.".gitconfig"]
+mode = "copy"

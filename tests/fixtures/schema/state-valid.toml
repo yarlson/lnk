@@ -1,0 +1,16 @@
+format = 1
+active_profiles = ["base", "mac", "work"]
+
+[[targets]]
+target = ".zshrc"
+profile = "base"
+source = "profiles/base/files/.zshrc"
+mode = "symlink"
+
+[[targets]]
+target = ".gitconfig"
+profile = "work"
+source = "profiles/work/files/.gitconfig"
+mode = "copy"
+source_hash = "sha256:source"
+applied_hash = "sha256:applied"
