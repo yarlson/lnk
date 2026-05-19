@@ -1,166 +1,279 @@
 # lnk
 
-**Git-native dotfiles manager. No config files, no templates, no ceremony.**
+**Git-native machine setup. Profiles, files, scripts, no daemon.**
 
-Track dotfiles across machines with one command. Lnk moves files into a Git repo (defaults to `~/.config/lnk`; override with `LNK_HOME` or `XDG_CONFIG_HOME`), symlinks them back, and stays out of your way.
+Track setup across machines with one command. Lnk keeps your setup repo in Git
+(defaults to `~/.config/lnk`; override with `LNK_HOME` or `XDG_CONFIG_HOME`),
+applies profile-owned files into `$HOME`, and stays out of your way.
 
 ```bash
-lnk init -r git@github.com:you/dotfiles.git   # clone & bootstrap
-lnk pull                                       # restore symlinks
-lnk add ~/.vimrc ~/.bashrc ~/.gitconfig        # track files
-lnk add --host work ~/.ssh/config              # per-machine config
-lnk push "done"                                # commit & push
+lnk init                         # create a setup repo
+lnk apply base mac work           # select profiles and apply files
+lnk apply                         # re-apply this machine's profiles
+lnk status                        # see repo and live-file state
+lnk run setup                     # run explicit setup scripts
 ```
+
+v2 is not a hidden configuration platform. It manages files and explicit
+scripts under `$HOME`; it does not manage packages, services, secrets, sudo
+workflows, or system paths.
 
 ## Install
 
+Build v2 from source:
+
 ```bash
-curl -sSL https://raw.githubusercontent.com/yarlson/lnk/main/install.sh | bash
+git clone https://github.com/yarlson/lnk.git
+cd lnk
+cargo build --release
 ```
 
-Or with Homebrew:
+The binary will be at `target/release/lnk`.
+
+For development:
 
 ```bash
-brew install lnk
-```
-
-Or grab a binary from [releases](https://github.com/yarlson/lnk/releases), or build from source:
-
-```bash
-go install github.com/yarlson/lnk@latest
+cargo run -- <command>
 ```
 
 ## How it works
 
 ```
-Before: ~/.vimrc (regular file)
-After:  ~/.vimrc → ~/.config/lnk/.vimrc (symlink into git repo)
+Before: ~/.zshrc (regular file)
+After:  ~/.zshrc -> ~/.config/lnk/profiles/base/files/.zshrc
 ```
 
-Common files live at the repo root. Host-specific files go in `<hostname>.lnk/` subdirectories. A plain text `.lnk` file tracks what's managed — one path per line, no special format.
+Profiles live under `profiles/<name>/`. Normal files go in `files/` and are
+symlinked by convention. Scripts go in `scripts/` and run only when you ask for
+them.
 
-```
+```text
 ~/.config/lnk/
-├── .lnk                 # tracked common files
-├── .lnk.work            # tracked work-specific files
-├── .vimrc               # common
-├── .gitconfig            # common
-└── work.lnk/            # host-specific storage
-    └── .ssh/config
+├── lnk.toml
+└── profiles/
+    ├── base/
+    │   ├── files/
+    │   │   ├── .zshrc
+    │   │   └── .config/nvim/init.lua
+    │   └── scripts/
+    │       └── setup
+    ├── mac/
+    │   └── files/
+    │       └── .config/karabiner/karabiner.json
+    └── work/
+        ├── profile.toml
+        ├── files/
+        │   └── .gitconfig
+        └── scripts/
+            └── setup
 ```
+
+`profile.toml` is optional. Use it only when a file needs non-default behavior:
+copy mode, target remapping, explicit overrides, or script metadata.
+
+```toml
+[files.".gitconfig"]
+mode = "copy"
+
+[files.".ssh/config"]
+target = ".ssh/config"
+overrides = "base"
+
+[scripts.setup]
+platforms = ["macos", "linux"]
+```
+
+Local machine state stays outside Git under XDG state. That state records this
+machine's active profiles and applied targets, so the shared repo stays
+reviewable.
 
 ## Usage
 
-### Add files
+### Initialize
 
 ```bash
-lnk add ~/.vimrc ~/.bashrc                # multiple at once
-lnk add --recursive ~/.config/nvim        # each file individually
-lnk add --host laptop ~/.ssh/config       # host-specific
-lnk add --dry-run ~/.tmux.conf            # preview first
+lnk init
 ```
+
+This creates `lnk.toml`, `profiles/base/files/`, `profiles/base/scripts/`,
+initializes Git if needed, and creates the first commit.
+
+### Add files
+
+Put files under the owning profile:
+
+```text
+profiles/base/files/.zshrc
+profiles/base/files/.config/nvim/init.lua
+profiles/mac/files/.config/karabiner/karabiner.json
+```
+
+The default target is the same path under `$HOME`.
+
+### Apply profiles
+
+```bash
+lnk apply base mac work
+lnk apply --dry-run base mac work
+lnk apply
+```
+
+`lnk apply <profiles...>` validates the ordered profile list, stores it for this
+machine, and applies the files. `lnk apply` without arguments uses the stored
+profile list.
+
+Preview uses the same command with `--dry-run`; no separate plan command is
+needed.
+
+### Conflicts and backups
+
+Unmanaged live files block by default. If a real file already exists where lnk
+would write a symlink or copy, apply stops instead of overwriting it.
+
+```bash
+lnk apply --backup base mac work
+```
+
+`--backup` renames conflicting files next to the original target:
+
+```text
+<path>.lnk-backup-YYYYMMDD-HHMMSS
+```
+
+Check for `.lnk-backup-*` files after running with `--backup` if you expect
+them.
 
 ### Sync
 
+Use Git for Git:
+
 ```bash
-lnk status                                # what changed (works even without remote)
-lnk diff                                  # uncommitted changes
-lnk diff --quiet                          # exit code only, no output
-lnk diff --colors always                  # force color output (useful in scripts/redirects)
-lnk push "updated vim config"             # commit & push
-lnk pull                                  # pull & restore symlinks
-lnk pull --host work                      # pull host-specific config
+git -C ~/.config/lnk diff
+git -C ~/.config/lnk commit -am "update setup"
+git -C ~/.config/lnk pull
+git -C ~/.config/lnk push
 ```
 
-`status` works without a remote configured — it shows local state (dirty/clean, unpushed commits) and guides you to add a remote.
-
-### Remove
+Then use lnk for machine state:
 
 ```bash
-lnk rm ~/.vimrc                           # moves file back, removes symlink
-lnk rm --force ~/.bashrc                  # tracking cleanup only (no file restoration)
+lnk apply
+lnk status
 ```
 
-`--force` is for cleanup when the symlink is already gone (e.g., you deleted it manually). It removes the entry from `.lnk` and the stored file from the repo, but does **not** restore anything to your home directory. Use normal `lnk rm` for a full removal with restoration.
+`status` shows active profiles, applied targets, missing or wrong symlinks,
+copy drift, and dirty repo state.
 
-### List
+### Scripts
+
+Scripts are explicit. Applying files never runs scripts.
 
 ```bash
-lnk list                                  # common files
-lnk list --host work                      # host-specific
-lnk list --all                            # everything
+lnk run setup            # run setup across active profiles
+lnk run work:setup       # run work's setup script only
 ```
 
 ### Health checks
 
 ```bash
-lnk doctor --dry-run                      # preview issues
-lnk doctor                                # fix broken symlinks & stale entries
+lnk doctor
+lnk doctor --json
 ```
 
-When restoring symlinks, if a real file exists at the target location (not a symlink), it will be renamed to `<path>.lnk-backup` to preserve your data before the symlink is created. Check for `.lnk-backup` files after running `doctor` or `pull` if you expect them.
+`doctor` is read-only. It audits repo manifests, profile metadata, target paths,
+override declarations, local state, symlinks, and copy drift.
 
-### Bootstrap
+### JSON
 
-Drop a `bootstrap.sh` in your dotfiles repo. Lnk runs it automatically on `lnk init -r <url>`.
+Structured commands support `--json`:
 
 ```bash
-lnk init -r <url> --no-bootstrap          # skip auto-bootstrap
-lnk bootstrap                             # run manually
+lnk profiles --json
+lnk apply --json
+lnk status --json
+lnk doctor --json
 ```
+
+JSON output is for automation. Human output stays terse.
 
 ## New machine setup
 
 ```bash
-lnk init -r git@github.com:you/dotfiles.git
-lnk pull
-lnk pull --host $(hostname)
+git clone git@github.com:you/dotfiles.git ~/.config/lnk
+lnk apply base mac work
+lnk run setup
 ```
 
-That's it. Bootstrap runs automatically, symlinks get restored, you're working.
+That's it. Profiles are stored for this machine, symlinks get restored, scripts
+run only when requested, and you're working.
+
+## Migration from v1
+
+v2 keeps migration explicit and plan-first:
+
+```bash
+lnk migrate v1
+lnk migrate v1 --write --yes
+```
+
+The read-only form prints the plan. The write form mutates the current Git
+branch only after `--write --yes`.
+
+The v1 mapping is:
+
+- `.lnk` becomes profile `base`
+- `.lnk.<host>` becomes profile `<host>`
+- common files move to `profiles/base/files/`
+- host files move to `profiles/<host>/files/`
+- host/common path collisions become explicit host overrides
+- `bootstrap.sh` becomes `profiles/base/scripts/setup`
+
+Migration must refuse a dirty working tree, create a backup tag, preserve Git
+history and remotes, make one migration commit, and never run scripts.
 
 ## Commands
 
-| Command                                            | What it does                                |
-| -------------------------------------------------- | ------------------------------------------- |
-| `init [-r url] [--force] [--no-bootstrap]`         | Create or clone a dotfiles repo             |
-| `add [--host H] [--recursive] [--dry-run] <files>` | Track files (move to repo + symlink)        |
-| `rm [--host H] [--force] <file>`                   | Untrack file (restore to original location) |
-| `list [--host H] [--all]`                          | Show tracked files                          |
-| `status`                                           | Git sync status                             |
-| `diff`                                             | Uncommitted changes                         |
-| `push [message]`                                   | Stage, commit, push                         |
-| `pull [--host H]`                                  | Pull and restore symlinks                   |
-| `doctor [--host H] [--dry-run]`                    | Find and fix repo health issues             |
-| `bootstrap`                                        | Run bootstrap.sh from repo                  |
+| Command                                               | What it does                        |
+| ----------------------------------------------------- | ----------------------------------- |
+| `init`                                                | Create a v2 setup repo              |
+| `profiles [--json]`                                   | Show available and active profiles  |
+| `apply [--dry-run] [--backup] [--json] [profiles...]` | Apply profile files                 |
+| `status [--json]`                                     | Show repo and local machine state   |
+| `run <script>`                                        | Run a script across active profiles |
+| `run <profile>:<script>`                              | Run one profile-owned script        |
+| `doctor [--json]`                                     | Audit repo and local machine health |
+| `migrate v1 [--write --yes]`                          | Reserved for v1 migration           |
 
-## Global Options
+## Repo locations
 
-Available with all commands:
+`lnk` resolves the setup repo in this order:
 
-| Option                       | Default | What it does                                                  |
-| ---------------------------- | ------- | ------------------------------------------------------------- |
-| `--colors auto\|always\|never` | `auto`    | Control color output (auto: based on terminal detection)     |
-| `--emoji`, `--no-emoji`        | enabled | Enable/disable emoji in output                               |
-| `--quiet` or `-q`              | off     | Suppress all output (useful in scripts, exit code only)       |
+1. `LNK_HOME`
+2. `XDG_CONFIG_HOME/lnk`
+3. `~/.config/lnk`
+
+Local state is stored at:
+
+1. `$XDG_STATE_HOME/lnk/machine.toml`
+2. `~/.local/state/lnk/machine.toml`
 
 ## Why lnk over alternatives
 
-|                | lnk                        | chezmoi          | yadm            | stow                     |
-| -------------- | -------------------------- | ---------------- | --------------- | ------------------------ |
-| Config needed  | None                       | Templates + YAML | Git knowledge   | Stow directory structure |
-| Multi-host     | Built-in `--host` flag     | Templates        | Manual branches | Manual                   |
-| Bulk ops       | `add` takes multiple files | One at a time    | One at a time   | Package-based            |
-| Bootstrap      | Automatic on clone         | Separate scripts | Separate        | No                       |
-| Health checks  | `doctor` command           | No               | No              | No                       |
-| Learning curve | Minutes                    | Hours            | Medium          | Low                      |
+|                | lnk v2                 | chezmoi          | yadm            | stow                     |
+| -------------- | ---------------------- | ---------------- | --------------- | ------------------------ |
+| Config model   | Profiles + conventions | Templates + YAML | Git knowledge   | Stow directory structure |
+| Machine state  | Local, outside Git     | Template data    | Manual branches | Manual                   |
+| Scripts        | Explicit `lnk run`     | Hooks/scripts    | Bootstrap       | No                       |
+| Conflicts      | Blocking by default    | Template-driven  | Git/manual      | Manual                   |
+| Git model      | Normal Git repo        | Managed workflow | Normal Git repo | Normal Git repo          |
+| Learning curve | Minutes                | Hours            | Medium          | Low                      |
 
 ## Contributing
 
 ```bash
 git clone https://github.com/yarlson/lnk.git
 cd lnk
-make check    # fmt, vet, lint, test
+make verify
 ```
 
 ## License

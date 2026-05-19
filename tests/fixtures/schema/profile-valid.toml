@@ -1,0 +1,7 @@
+[files.".gitconfig"]
+target = ".config/git/config"
+mode = "copy"
+overrides = "base"
+
+[scripts.setup]
+platforms = ["macos", "linux"]

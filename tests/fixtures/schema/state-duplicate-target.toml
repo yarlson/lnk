@@ -1,0 +1,14 @@
+format = 1
+active_profiles = ["base", "work"]
+
+[[targets]]
+target = ".zshrc"
+profile = "base"
+source = "profiles/base/files/.zshrc"
+mode = "symlink"
+
+[[targets]]
+target = ".zshrc"
+profile = "work"
+source = "profiles/work/files/.zshrc"
+mode = "symlink"
