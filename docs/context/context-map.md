@@ -1,7 +1,12 @@
 # Context Map
 
+For v2 work, start with the root [v2 design draft](../../DESIGN.md). The other
+context docs describe the current Go/v1 implementation unless the v2 draft
+explicitly overrides them.
+
 ## Root
 
+- [v2 design draft](../../DESIGN.md) — current Rust v2 product and architecture direction
 - [summary](summary.md) — what lnk is and how it is built
 - [intent](intent.md) — high-level product intent, inferred goals, and open questions
 - [terminology](terminology.md) — stable terms (managed item, host scope, .lnk file)
