@@ -60,6 +60,27 @@ lnk add --host laptop ~/.ssh/config       # host-specific
 lnk add --dry-run ~/.tmux.conf            # preview first
 ```
 
+### Jump to lnk home
+
+Add this wrapper to your shell config (`~/.zshrc`, `~/.bashrc`, etc.) so `lnk cd` can change the current shell directory:
+
+```bash
+lnk() {
+  if [ "$1" = "cd" ]; then
+    cd "$(command lnk home)"
+  else
+    command lnk "$@"
+  fi
+}
+```
+
+Then use:
+
+```bash
+# cd into your lnk repo
+lnk cd
+```
+
 ### Sync
 
 ```bash
@@ -127,6 +148,7 @@ That's it. Bootstrap runs automatically, symlinks get restored, you're working.
 | `add [--host H] [--recursive] [--dry-run] <files>` | Track files (move to repo + symlink)        |
 | `rm [--host H] [--force] <file>`                   | Untrack file (restore to original location) |
 | `list [--host H] [--all]`                          | Show tracked files                          |
+| `home`                                             | Print lnk home path                         |
 | `status`                                           | Git sync status                             |
 | `diff`                                             | Uncommitted changes                         |
 | `push [message]`                                   | Stage, commit, push                         |
