@@ -88,6 +88,7 @@ Supports both common configurations, host-specific setups, and bulk operations f
 	rootCmd.AddCommand(newPushCmd())
 	rootCmd.AddCommand(newPullCmd())
 	rootCmd.AddCommand(newBootstrapCmd())
+	rootCmd.AddCommand(newHomeCmd())
 
 	return rootCmd
 }

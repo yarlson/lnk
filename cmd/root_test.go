@@ -172,6 +172,18 @@ func (suite *CLITestSuite) TestStatusCommand() {
 	suite.Contains(output, "git remote add origin")
 }
 
+func (suite *CLITestSuite) TestHomeCommand() {
+	err := suite.runCommand("init")
+	suite.Require().NoError(err)
+	suite.stdout.Reset()
+
+	err = suite.runCommand("home")
+	suite.NoError(err)
+
+	lnkDir := filepath.Join(suite.tempDir, ".config", "lnk")
+	suite.Equal(lnkDir+"\n", suite.stdout.String())
+}
+
 func (suite *CLITestSuite) TestListCommand() {
 	// Test list without init - should fail
 	err := suite.runCommand("list")
