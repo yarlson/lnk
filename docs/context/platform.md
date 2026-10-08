@@ -10,7 +10,7 @@
 ## Install paths
 
 - One-shot install script: `install.sh` (also published via `curl | bash` from the GitHub raw URL).
-- Homebrew formula published to a tap by GoReleaser.
+- Homebrew cask published to a tap by GoReleaser.
 - Pre-built binaries on GitHub Releases (one per OS/arch).
 - `go install github.com/yarlson/lnk@latest` for a from-source install.
 
